@@ -60,12 +60,27 @@ public class TransactionServiceTests
         }
     }
 
+    /// <summary>
+    /// Fake cache that is never available. It keeps the service on its store
+    /// fallback path so the existing (store-only) behaviour is exercised —
+    /// matching the contract before the cache integration existed.
+    /// </summary>
+    private sealed class UnavailableCache : ITransactionCache
+    {
+        public ValueTask<bool> IsAvailableAsync(CancellationToken ct = default) => ValueTask.FromResult(false);
+        public ValueTask<Transaction?> GetCachedAsync(string transactionId, CancellationToken ct = default) => ValueTask.FromResult<Transaction?>(null);
+        public ValueTask SetCachedAsync(Transaction transaction, CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask<IReadOnlyList<Transaction>?> GetCachedListAsync(CancellationToken ct = default) => ValueTask.FromResult<IReadOnlyList<Transaction>?>(null);
+        public ValueTask SetCachedListAsync(IEnumerable<Transaction> transactions, CancellationToken ct = default) => ValueTask.CompletedTask;
+    }
+
     private readonly FakeStore _store = new();
+    private readonly ITransactionCache _cache = new UnavailableCache();
     private readonly TransactionService _service;
 
     public TransactionServiceTests()
     {
-        _service = new TransactionService(_store);
+        _service = new TransactionService(_store, _cache);
     }
 
     // 1. Valid payload → Success and persisted in the store.
@@ -139,7 +154,7 @@ public class TransactionServiceTests
     [Fact]
     public async Task Process_CancelledToken_ThrowsOperationCanceledException()
     {
-        var service = new TransactionService(new CancellingStore());
+        var service = new TransactionService(new CancellingStore(), _cache);
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 

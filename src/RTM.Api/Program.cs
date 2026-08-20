@@ -16,6 +16,12 @@ builder.Services.AddSwaggerGen();
 // Cache: Redis-first with transparent in-memory fallback (best-effort).
 builder.Services.AddCacheProvider(builder.Configuration);
 
+// Transaction cache: adapts the generic cache provider to the transaction-typed
+// contract (cache-aside / write-through). Availability follows the underlying
+// provider's connection state, so reads fall back to the store when no real
+// backend is connected.
+builder.Services.AddSingleton<ITransactionCache, TransactionCache>();
+
 // Transaction store: In-Memory Thread-Safe (ConcurrentDictionary) singleton.
 // Singleton so all requests/hub connections share one store instance in this
 // real-time context (single-process semantics).

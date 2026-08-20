@@ -206,3 +206,39 @@ dotnet test    → Passed! Failed: 0, Passed: 31, Skipped: 0, Total: 31
 
 ### git
 - לא נגענו ב-git (per request — לשאול אישור לפני upload). השינויים ב-working tree ממתינים לאישורך.
+
+---
+
+## משימה 2.0 — אינטגרציית Cache (cache-aside + write-through + fallback)
+
+**סטטוס:** ✅ הושלם (אומת build+test, 35 בדיקות ירוקות)
+
+### קבצים שנוצרו/שונו
+- `src/RTM.Api/Domain/ITransactionCache.cs` — (Core, חדש) contract טיפוסי-Transaction: `GetCachedAsync/SetCachedAsync` (עסקה בודדת תחת key `t:{id}`), `GetCachedListAsync/SetCachedListAsync` (כלל-הרשימה תחת key `t:all`), `IsAvailableAsync`. Best-effort: מימושים חייבים לא לזרוק על קאש לא-זמין.
+- `src/RTM.Api/Services/TransactionCache.cs` — (Services, חדש) Adapt את `ICacheProvider` הגנרי ל-contract הטיפוסי + serialization JSON; availability = `inner.IsConnected`; כשקאש לא מחובר → reads=miss, writes=skip.
+- `src/RTM.Api/Domain/Transaction.cs` — הוספת `[JsonConstructor]` (ל-deserialize בקאש; פרמטרים ממופים לפי שם).
+- `src/RTM.Api/Domain/ITransactionService.cs` — הוספת `GetByIdAsync` (cache-aside ל-entry בודד; משלים את `ITransactionStore.GetByIdAsync`).
+- `src/RTM.Api/Services/TransactionService.cs` — מורחב: `ProcessAsync` → write-through (Store ואז SetCachedAsync); `GetAllAsync` → cache-aside (רשימה) + populate + fallback; `GetByIdAsync` (חדש) → cache-aside (entry) + populate + fallback.
+- `src/RTM.Api/Program.cs` — `AddSingleton<ITransactionCache, TransactionCache>()`.
+- `tests/RTM.Tests/Services/TransactionCacheIntegrationTests.cs` — (חדש) 4 TDD.
+- `tests/RTM.Tests/Services/TransactionServiceTests.cs` — עדכון ה-constructor (הזרקת cache fake שתמיד לא-זמין → שומר על מסלול ה-Store של הבדיקות הקודמות).
+
+### החלטות עיצוב
+- **Cache הוא Services-layer** (עוטף `ICacheProvider` הגנרי משכונת 1.1) — בלי לשבור את ה-DI הקיים; ה-`ITransactionCache` החדש הוא Core-טהור.
+- **Availability = `ICacheProvider.IsConnected`**: כש-Redis לא מחובר (או fallback to InMemory שמדווח IsConnected=false), ה-`TransactionCache.IsAvailableAsync` → false, ו-TransactionService נופל ל-Store תמיד. ה-Store הוא מקור האמת; הקאש הוא אופטימיזציה best-effort.
+- **write-through** ב-ProcessAsync: Store קודם (תמיד), ואז SetCachedAsync (best-effort, לא זרק). עקבי עם "store as source of truth".
+- **cache-aside** ב-GetAllAsync (key `t:all`) וב-GetByIdAsync (key `t:{id}`): miss → store → populate.
+
+### פקודות שהורצו
+```
+dotnet restore → All projects are up-to-date
+dotnet build   → Build succeeded. 0 Warning(s), 0 Error(s)
+dotnet test    → Passed! Failed: 0, Passed: 35, Skipped: 0, Total: 35
+```
+
+### מה כדאי לבדוק בעצמי
+- 4 הבדיקות החדשות ב-`TransactionCacheIntegrationTests`: `GetAll_CacheAside_SecondReadServedFromCache` (counter: store נפגע פעם אחת), `GetAll_CacheUnavailable_FallsBackToStore` (fallback), `Process_WriteThrough_ValueVisibleInCache`, `GetById_CacheAside_PopulatesOnce_ThenServedFromCache` (seed → populate → hit).
+- `TransactionCache.cs` — hooks של availability ו-best-effort.
+
+### git
+- לא נגענו ב-git — השינויים ב-working tree ממתינים לאישורך.

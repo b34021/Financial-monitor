@@ -8,22 +8,28 @@ namespace RTM.Api.Services;
 
 /// <summary>
 /// Application-layer service that validates raw inbound transaction data,
-/// builds the <see cref="Transaction"/> value object, and persists it via the
-/// injected <see cref="ITransactionStore"/>. No <c>new</c> of dependencies —
-/// the store is constructor-injected.
+/// builds the <see cref="Transaction"/> value object, persists it via the
+/// injected <see cref="ITransactionStore"/>, and serves reads through a
+/// cache-aside / write-through flow driven by the injected
+/// <see cref="ITransactionCache"/>. No <c>new</c> of dependencies — both are
+/// constructor-injected.
 ///
 /// Validation happens BEFORE constructing the domain object, so invalid
 /// payloads are reported as <see cref="Result{T}.Failure"/> without ever
-/// throwing. Cancellation surfaces as <see cref="OperationCanceledException"/>
+/// throwing. The cache is always best-effort: if it is unavailable, reads fall
+/// back to the store and writes are skipped — the store remains the source of
+/// truth. Cancellation surfaces as <see cref="OperationCanceledException"/>
 /// (documented design decision, see PROGRESS.md).
 /// </summary>
 public sealed class TransactionService : ITransactionService
 {
     private readonly ITransactionStore _store;
+    private readonly ITransactionCache _cache;
 
-    public TransactionService(ITransactionStore store)
+    public TransactionService(ITransactionStore store, ITransactionCache cache)
     {
         _store = store;
+        _cache = cache;
     }
 
     public async Task<Result<Transaction>> ProcessAsync(
@@ -41,15 +47,52 @@ public sealed class TransactionService : ITransactionService
         // Validated payload — constructor invariants are satisfied.
         var transaction = new Transaction(transactionId, amount, currency, status, timestamp);
 
+        // Source of truth: always persist to the store first.
         await _store.AddAsync(transaction, ct);
+
+        // Write-through: best-effort refresh of the single-entry cache. The
+        // full-list cache is stale by design; it is repopulated lazily by reads.
+        await _cache.SetCachedAsync(transaction, ct).ConfigureAwait(false);
+
         return Result<Transaction>.Success(transaction);
     }
 
     public async Task<Result<IReadOnlyList<Transaction>>> GetAllAsync(CancellationToken ct)
     {
-        var items = await _store.GetAllAsync(ct);
+        // Cache-aside: prefer the full-list cache when available.
+        if (await _cache.IsAvailableAsync(ct).ConfigureAwait(false))
+        {
+            var cached = await _cache.GetCachedListAsync(ct).ConfigureAwait(false);
+            if (cached is not null)
+                return Result<IReadOnlyList<Transaction>>.Success(cached);
+        }
+
+        // Miss (or cache unavailable) → store is the fallback.
+        var items = await _store.GetAllAsync(ct).ConfigureAwait(false);
         var snapshot = new List<Transaction>(items);
+
+        // Populate the cache for the next read (best-effort).
+        await _cache.SetCachedListAsync(snapshot, ct).ConfigureAwait(false);
+
         return Result<IReadOnlyList<Transaction>>.Success(snapshot);
+    }
+
+    public async Task<Result<Transaction?>> GetByIdAsync(string transactionId, CancellationToken ct)
+    {
+        // Cache-aside: try the single-entry cache first.
+        if (await _cache.IsAvailableAsync(ct).ConfigureAwait(false))
+        {
+            var cached = await _cache.GetCachedAsync(transactionId, ct).ConfigureAwait(false);
+            if (cached is not null)
+                return Result<Transaction?>.Success(cached);
+        }
+
+        // Miss → store (fallback).
+        var found = await _store.GetByIdAsync(transactionId, ct).ConfigureAwait(false);
+        if (found is not null)
+            await _cache.SetCachedAsync(found, ct).ConfigureAwait(false); // populate
+
+        return Result<Transaction?>.Success(found);
     }
 
     private static string? Validate(

@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Serialization;
 
 namespace RTM.Api.Domain;
 
@@ -26,6 +27,11 @@ public sealed class Transaction
     public TransactionStatus Status { get; }
     public DateTimeOffset Timestamp { get; }
 
+    /// <summary>
+    /// Validating constructor, also used by the JSON serializer when cache
+    /// entries are deserialized (parameters drive the mapping by name).
+    /// </summary>
+    [JsonConstructor]
     public Transaction(
         Guid transactionId,
         decimal amount,
