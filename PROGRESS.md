@@ -242,3 +242,40 @@ dotnet test    → Passed! Failed: 0, Passed: 35, Skipped: 0, Total: 35
 
 ### git
 - לא נגענו ב-git — השינויים ב-working tree ממתינים לאישורך.
+
+---
+
+## משימה 2.1 — Ingestion API (POST /api/transactions)
+
+**סטטוס:** ✅ הושלם (אומת build+test, 39 בדיקות ירוקות)
+
+### קבצים שנוצרו/שונו
+- `src/RTM.Api/Api/TransactionRequest.cs` — (חדש, Api layer) DTO record: 5 שדות (TransactionId/Guid?, Amount/decimal?, Currency/string?, Status/TransactionStatus?, Timestamp/DateTimeOffset?) + DataAnnotations (`[Required]`, `[Range(0, max)]`, `[StringLength(3,3)]`). ה-Service מקבל raw values — לא בונים Transaction ב-API.
+- `src/RTM.Api/Api/TransactionEndpoints.cs` — (חדש) Minimal API `MapTransactionEndpoints()`: `POST /api/transactions` → structural validation (DataAnnotations → `Results.ValidationProblem` 400), ואז `service.ProcessAsync(...)` → Success → `Results.Created` 201 + העסקה; Failure → `Results.BadRequest` 400 + message. `ILogger` (LogWarning/Information) על בקשה/השלמה/דחייה; `CancellationToken` מ-RequestAborted.
+- `src/RTM.Api/Program.cs` — `ConfigureHttpJsonOptions` עם `JsonStringEnumConverter` (enum כ-string ב-JSON); `app.MapTransactionEndpoints()`.
+- `tests/RTM.Tests/RTM.Tests.csproj` — הוספת `Microsoft.AspNetCore.Mvc.Testing`.
+- `tests/RTM.Tests/Api/TransactionIngestionApiTests.cs` — (חדש) 4 Integration Tests על `WebApplicationFactory<Program>` (שרת אחד משותף).
+
+### בדיקות
+1. `Post_ValidPayload_Returns201AndEchoesId` — 201 + body transactionId תואם.
+2. `Post_NegativeAmount_Returns400` — amount<0 → 400.
+3. `Post_InvalidCurrencyLength_Returns400` — currency≠3 → 400.
+4. `Post_MissingFields_Returns400` — body `{}` → 400.
+
+### החלטות / ממצאים
+- **JsonStringEnumConverter**: ברירת המחדל של System.Text.Json מפענח enum כמספר; בלי התוסף, `"status":"Pending"` (string) נכשל עם 400. ההחלטה: enabling string-enum ב-JSON — כ convention ידידותי ללקוח ומתאים ל-React-client.
+- **Validation כפול**: DataAnnotations מסננים פגמים מבניים (missing/range/length) → 400 מוקדם; ה-`ProcessAsync` (שכבות תחתונות) מאמת חוקים עסקיים (far-future timestamp) → 400. אין `new` של שירות — הכול DI.
+
+### פקודות שהורצו
+```
+dotnet restore → All projects are up-to-date
+dotnet build   → Build succeeded. 0 Warning(s), 0 Error(s)
+dotnet test    → Passed! Failed: 0, Passed: 39, Skipped: 0, Total: 39
+```
+
+### מה כדאי לבדוק בעצמי
+- ה-`TransactionIngestionApiTests` — ארבעת התרחישים (201 + 3×400).
+- ב-`TransactionEndpoints` — זרימה: validation → service → Created/BadRequest, עם logging.
+
+### git
+- לא נגענו ב-git — השינויים ב-working tree ממתינים לאישורך.

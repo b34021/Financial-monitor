@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using RTM.Api.Api;
 using RTM.Api.Caching;
 using RTM.Api.Domain;
 using RTM.Api.Services;
@@ -12,6 +13,11 @@ var builder = WebApplication.CreateBuilder(args);
 // Services
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// JSON: serialize/deserialize TransactionStatus as its string name
+// (e.g. "Pending" rather than a numeric code) — friendlier for external clients.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 // Cache: Redis-first with transparent in-memory fallback (best-effort).
 builder.Services.AddCacheProvider(builder.Configuration);
@@ -49,6 +55,9 @@ app.UseHttpsRedirection();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", timestamp = DateTimeOffset.UtcNow }))
    .WithName("Health")
    .WithOpenApi();
+
+// Ingestion API
+app.MapTransactionEndpoints();
 
 app.Run();
 
