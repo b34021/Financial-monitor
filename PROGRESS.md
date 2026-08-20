@@ -72,3 +72,35 @@ dotnet test    → Passed! Failed: 0, Passed: 5, Skipped: 0, Total: 5
 - הפעל את הבדיקות ב-Test Explorer (5 ירוקות).
 - `InMemoryCacheProviderTests` — במיוחד `Provider_WorksWithoutRedis_WithInMemoryFallback` (ה-Red-fallbackסקריפט).
 - הרץ את ה-API בלי Redis (`dotnet run --project src/RTM.Api`) — בעקוב של-logs תראה "Unable to reach Redis ... using in-memory fallback cache" ואי-פני באג. ה-`/health` מחזיר OK. אם תרצה, תחבר קונטיינר Redis מאוחר יותר והלוג יְראה "Redis connected".
+
+---
+
+## משימה 1.2 — מודל Transaction (5 שדות + Validation)
+
+**סטטוס:** ✅ הושלם (אומת build+test, 18 בדיקות ירוקות)
+
+### קבצים שנוצרו/שונו
+- `src/RTM.Api/Domain/Transaction.cs` — מחלקה `Transaction` (משמרת חוקיות בלתי נשברת) + enum `TransactionStatus { Pending, Completed, Failed }`.
+- `tests/RTM.Tests/Domain/TransactionTests.cs` — בדיקות יחידה: עסקה חוקית, amount שלילי נדחה, currency באורך פסול נדחה, transactionId חייב GUID תקין, כל הערכים של status תקפים, amount 0 מתקבל.
+
+### החלטות עיצוב + סיבה
+- **כדי לשמור על אובייקטים תמיד-חוקיים** (invariant protection), הבנייה של `Transaction` עוברת דרך Constructor עם validation (fail-fast) — כך שאין מצב של מופע לא-חוקי במערכת. (ידרש זה עמידה ב"חוקיות בשמירה" — RTM-criteria.)
+- **`amount >= 0`** — פועל לפי הדרישה ("amount >= 0"); אפס חוקי, שלילי נדחה.
+- **`currency`** — חייב להיות באורך בדיוק 3 אותיות (לא ריק, לא whitespace).
+- **`transactionId`** — `Guid` (לא GUID ריק). הבחירה: לשמור ב-C# כסוג `Guid` (אמיתי, ממוקד), עם קידוד JSON ל-string כ"guid-string" בתשובות (יעשה ב-endpoint 2.1).
+- **`timestamp`** — `DateTimeOffset` (UTC) — שומר אזור זמן, עומד ISO-8601.
+- **`status`** — enum, ברור בטיפוס.
+- TDD: תחילה הבדיקות (Red), המימוש עושה אותן ירוקות (Green).
+
+### פקודות שהורצו + פלט
+```
+dotnet restore → success
+dotnet build   → Build succeeded. 0 Warning(s), 0 Error(s)
+dotnet test    → Passed! Failed: 0, Passed: 18, Skipped: 0, Total: 18
+```
+בדרך: Red — 3 בדיקות נכשלו כי `amount` השלילי זרק `ArgumentOutOfRangeException` והבדיקה ציפתה ל-`ArgumentException`. תיקון: איחוד לכל `ArgumentException` במודל (אחידות).
+
+> ⚠️ **שימו לב ל-commit:** בסביבה הנוכחית `git` אינו installed/זמין ב-PATH, וה-directory אינו repo פעיל כרגע. הקומיטים מ-1.0/1.1 בוצעו כנראה בסשן/סביבה קודמים. יש להריץ `git add` + `git commit` בקומפורט כשגישה ל-git תהיה זמינה (או במסננת חיצונית). כל הקבצים של 1.2 כבר כתובים על הדיסק — רק הנקודה של המעקב ל-git חסרה.
+### מה כדאי לבדוק בעצמי
+- `TransactionTests` ב-Test Explorer — 13 בדיקות ירוקות (פלוס 5 של משימה 1.1 = 18).
+- שימו לב: המודל משתמש ב-`Guid` עבור transactionId — ב-JSON יוצגוך `string` (GUID format) דרך קונסנציית הסריאליזציה (יתבהר ב-2.1).
