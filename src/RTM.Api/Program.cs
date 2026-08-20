@@ -19,6 +19,14 @@ builder.Services.AddSwaggerGen();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
+// SignalR: real-time push to live dashboards (the /monitor client).
+builder.Services.AddSignalR();
+
+// Real-time broadcaster: pushes ingested transactions to hub clients. Best-effort
+// SignalR-backed implementation lives in the Api layer; the Services layer only
+// depends on the Core interface (dependency direction preserved).
+builder.Services.AddSingleton<ITransactionBroadcaster, SignalRTransactionBroadcaster>();
+
 // Cache: Redis-first with transparent in-memory fallback (best-effort).
 builder.Services.AddCacheProvider(builder.Configuration);
 
@@ -58,6 +66,9 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok", timestamp = DateTime
 
 // Ingestion API
 app.MapTransactionEndpoints();
+
+// Real-time hub — live dashboard connects here for transaction pushes.
+app.MapHub<TransactionHub>("/hubs/transactions");
 
 app.Run();
 

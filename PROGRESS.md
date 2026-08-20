@@ -266,16 +266,135 @@ dotnet test    → Passed! Failed: 0, Passed: 35, Skipped: 0, Total: 35
 - **JsonStringEnumConverter**: ברירת המחדל של System.Text.Json מפענח enum כמספר; בלי התוסף, `"status":"Pending"` (string) נכשל עם 400. ההחלטה: enabling string-enum ב-JSON — כ convention ידידותי ללקוח ומתאים ל-React-client.
 - **Validation כפול**: DataAnnotations מסננים פגמים מבניים (missing/range/length) → 400 מוקדם; ה-`ProcessAsync` (שכבות תחתונות) מאמת חוקים עסקיים (far-future timestamp) → 400. אין `new` של שירות — הכול DI.
 
-### פקודות שהורצו
+### וידוא עצמי שנעשה (Claude — סקירת קוד + בדיקות אוטומטיות)
+סקירה עצמית מלאה לפי כללי הארכיטקטורה (Layers, DI, Result pattern, CancellationToken,
+Nullable, TreatWarningsAsErrors, היעדר `new` של שירות, Logging, sanity עברית/שמות/כיווניות):
+- **Api layer ([TransactionEndpoints.cs](src/RTM.Api/Api/TransactionEndpoints.cs))**: HTTP בלבד → מעביר
+  ל-Service; לא נוגע ב-Store/Cache ישירות. Result pattern (IsSuccess/Error) → Created/BadRequest.
+  CancellationToken מועבר; Logging (Information/Warning) על כל שלב. ✅
+- **DTO ([TransactionRequest.cs](src/RTM.Api/Api/TransactionRequest.cs))**: DataAnnotations תקינים
+  ([Required], [Range(0,…)], [StringLength(3,3)]); 5 שדות בלבד — עקבי עם המודל. ✅
+- **Service ([TransactionService.cs](src/RTM.Api/Services/TransactionService.cs))**: ערך raw, מאמת חוקים
+  עסקיים (far-future timestamp) לפני בניית value object; DI מלא; Result pattern. ✅
+- **Program.cs**: רישום שירותים מלא; JsonStringEnumConverter (enum כ-string). ✅
+- **סניטי**: לא נדרש תיקון קוד — ה-Tests כבר ירוקים, ללא Warnings.
+
+### פקודות שהורצו בפועל (כולן הצליחו)
 ```
 dotnet restore → All projects are up-to-date
 dotnet build   → Build succeeded. 0 Warning(s), 0 Error(s)
 dotnet test    → Passed! Failed: 0, Passed: 39, Skipped: 0, Total: 39
 ```
 
-### מה כדאי לבדוק בעצמי
-- ה-`TransactionIngestionApiTests` — ארבעת התרחישים (201 + 3×400).
-- ב-`TransactionEndpoints` — זרימה: validation → service → Created/BadRequest, עם logging.
+### מה נותר לאמת ידנית (דורש יד אנושית — לא ניתן לאוטומציה)
+- הרצה ידנית עם HTTP אמיתי (לא דרך WebApplicationFactory): להריץ את ה-API (`dotnet run`),
+  לשלוח `POST /api/transactions` ב-Postman/curl ולבדוק שהתגובות (201/400) תואמות בסביבה חיה.
+- אישור סופי של החלטות שהתקבלו (string-enum convention, Validation כפול).
 
 ### git
 - לא נגענו ב-git — השינויים ב-working tree ממתינים לאישורך.
+
+---
+
+## משימה 2.2 — SignalR Live Layer
+
+**סטטוס:** ✅ הושלם (אומת build+test, 42 בדיקות ירוקות)
+
+### מה נבנה (החלטה ארכיטקטונית מרכזית)
+**פרידת השידור מ-Services ל-Core interface** (אופציה B, לפי החלטתך): במקום להזריק
+`IHubContext<TransactionHub>` ישירות ל-`TransactionService` (מה שהופך תלות של Services
+ל-Api — סתירה לכלל "Depends-on"), הגדרתי:
+
+| שכבה | קובץ | תפקיד |
+|------|------|-------|
+| Core/Domain | `Domain/ITransactionBroadcaster.cs` | contract בלבד — `ValueTask<int> BroadcastReceivedAsync(Transaction, ct)`; best-effort (אסור ל-throw). |
+| Api | `Api/TransactionHub.cs` | `Hub` עם מתודת client `TransactionReceived`; מונה חיבורים (static, per-process) לטלמטריה. |
+| Api | `Api/SignalRTransactionBroadcaster.cs` | מימוש ה-interface ע"י `IHubContext<TransactionHub>` + `ILogger`; שואף Failure → LogWarning + swallow (best-effort). |
+
+**התוצאה:** Services תלוי רק ב-Core (הכיוון הנכון); המימוש (SignalR) חי באפי. בדיקות
+יחידה מחליפות ב-fake broadcaster. → SOLID + Depends-on + best-effort.
+
+### שינוי ב-TransactionService (Services layer)
+- קונסטרוקטור: נוסף `ITransactionBroadcaster _broadcaster` + `ILogger<TransactionService>` (DI, אין new).
+- `ProcessAsync`: אחרי `_store.AddAsync` + `_cache.SetCachedAsync` →
+  `await _broadcaster.BroadcastReceivedAsync(transaction, ct)` (ct מועבר) +
+  `_logger.LogInformation("Broadcasted ... to {ClientCount} client(s).")`.
+- Best-effort מובטח: העסקה נשמרה ב-Store **לפני** השידור — אם השידור נכשל/מבוטל,
+  העסקה אינה אובדת (הברודקאסטר לוג Warning ומחזיר 0).
+
+### Program.cs
+- `builder.Services.AddSignalR()`.
+- `builder.Services.AddSingleton<ITransactionBroadcaster, SignalRTransactionBroadcaster>()`.
+- `app.MapHub<TransactionHub>("/hubs/transactions")`.
+
+### בדיקות (TDD — ירק; סה"כ 42)
+- `TransactionServiceTests`: ה-constructor עודכן ל-4 ארגומנטים (FakeBroadcaster + NullLogger).
+  **2 בדיקות חדשות**: (6b) Process-מוצלח → מתפרסם ל-broadcaster; (6c) Process-שנכשל → לא מתפרסם.
+- `TransactionCacheIntegrationTests`: ה-constructor עודכן (NullBroadcaster).
+- `TransactionIngestionApiTests`: **בדיקה חדשה** `Hub_Negotiate_ReturnsConnection` —
+  `POST /hubs/transactions/negotiate?negotiateVersion=1` → 200 + connectionId (מאשר שה-hub ממופה; ללא client חי).
+
+### ממצא/תיקון בתהליך (Red→Green)
+- הניסיון הראשוני עם `GET /hubs/transactions/negotiate` החזיר `405 MethodNotAllowed` —
+  ברירת מחדל של SignalR דורשת **POST** ל-negotiation. תוקן ב-`POST`. (חשוב ל-client של משימה 3.3.)
+
+### החלטות / הערות
+- **מונה החיבורים** (`TransactionHub.ConnectedClients`) הוא **לכל-תהליך** בכוונה:
+  עם עיצוב PowerDuplication (5 מופעים, docs/ADR.md) כל מופע מדווח מניינו — לא count
+  cluster-wide. טלמטריה בלבד.
+- **Cancellation בשידור:** לתפוס `OperationCanceledException` בברודקאסטר (סימן של ביטול בקשת)
+  → LogWarning + swallow — לא פוגע ב-Result של ingestion. העסקה בשום מקרה לא אבודה.
+
+### וידוא עצמי (Claude) — build/test הורצו בפועל, ירוק
+```
+dotnet restore → All projects are up-to-date
+dotnet build   → Build succeeded. 0 Warning(s), 0 Error(s)
+dotnet test    → Passed! Failed: 0, Passed: 42, Skipped: 0, Total: 42
+```
+סקירה עצמית: Layers תקינה (Api→Services→Core); DI מלא (אין `new` של שירות); CancellationToken
+ב-I/O; Result pattern; Nullable+TreatWarningsAsErrors; Logging ב-ingestion+שידור; sanity עברית.
+
+### מה נותר לאמת ידנית (לא ניתן לאוטומציה)
+- **חיבור WebSocket אמיתי** ל-`/hubs/transactions` עם לקוח SignalR חי (client `.ts`/JS) —
+  יאשר קבלת שידורים חיים. ⚠️ נדחה למשימה 3.3 (monitor client), כפי שתוכנן.
+- הרצת `dotnet run` ובדיקת POST חי (201/400) עם Postman ב-HTTP אמיתי.
+- אישור סופי: בחירת אופציה B (interface) — מומלצת.
+
+### git
+- לא נגענו ב-git — השינויים (משימה 2.2) ב-working tree ממתינים לאישורך.
+
+---
+
+## אימות ידני (2.1 + 2.2) — 🔎 הורץ בפועל ע"י Claude (ריצה חיה)
+
+**ריצה בפועל של ה-API (לא דרך WebApplicationFactory):**
+
+```
+dotnet run --project src/RTM.Api --no-build  (ASPNETCORE_URLS=http://localhost:5248)
+→ Now listening on: http://localhost:5248
+```
+
+### תוצאות ה-POST החי
+| בדיקה | משלוח | תוצאה |
+|-------|-------|-------|
+| עסקה תקינה (`amount=150.75`, `status=Pending`) | `POST /api/transactions` | ✅ **201 Created** — גוף: `{"transactionId":"11111111-...","amount":150.75,"currency":"USD","status":"Pending","timestamp":"2026-08-20T20:38:12+00:00"}` |
+| עסקה לא-תקינה (`amount=-5`) | `POST /api/transactions` | ✅ **400 Bad Request** (ValidationProblem) |
+
+### SignalR negotiation (hub חי)
+`POST /hubs/transactions/negotiate?negotiateVersion=1` → ✅ **200** עם
+`connectionId: "As2NRV0osA42T8U5JmqIQw"` + `availableTransports:[WebSockets, SSE, LongPolling]`.
+→ מאשר שה-`TransactionHub` רשום וממונה בחיים.
+
+### סיום
+- השרת הופסק (Ctrl+C) — פורט 5248 שוחרר (אומת: "Port 5248 free").
+
+### הערות
+- ריצה ב-**http://localhost:5248** (פרופיל `http`, בלי HTTPS/307 ו-cert נכנס — פשוט יותר ל-Ops).
+- ה-POST התקין השקיע עסקה אמיתית בסטור הזיכרון של השרת (מופע חד-פעמי; לא נשמר בין ריצות).
+- ההגדרה אמתית ב-PowerShell: הקובץ `TransactionIngestionApiTests` כבר אימת את 201/400 ב-integration; הריצה החיה מעלה את אותו אישור בסביבה אמיתית.
+
+### git
+- לא נגענו ב-git — הכול ב-working tree ממתין לאישורך.
+
+### ❗ STOP
+- **לא עוברים ל-2.3 עד אישורך.**

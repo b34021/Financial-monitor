@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using RTM.Api.Domain;
 
 namespace RTM.Api.Services;
@@ -9,27 +10,40 @@ namespace RTM.Api.Services;
 /// <summary>
 /// Application-layer service that validates raw inbound transaction data,
 /// builds the <see cref="Transaction"/> value object, persists it via the
-/// injected <see cref="ITransactionStore"/>, and serves reads through a
+/// injected <see cref="ITransactionStore"/>, serves reads through a
 /// cache-aside / write-through flow driven by the injected
-/// <see cref="ITransactionCache"/>. No <c>new</c> of dependencies — both are
-/// constructor-injected.
+/// <see cref="ITransactionCache"/>, and publishes the persisted transaction to
+/// live clients through the injected <see cref="ITransactionBroadcaster"/>.
+/// No <c>new</c> of dependencies — all are constructor-injected.
 ///
 /// Validation happens BEFORE constructing the domain object, so invalid
 /// payloads are reported as <see cref="Result{T}.Failure"/> without ever
 /// throwing. The cache is always best-effort: if it is unavailable, reads fall
 /// back to the store and writes are skipped — the store remains the source of
-/// truth. Cancellation surfaces as <see cref="OperationCanceledException"/>
-/// (documented design decision, see PROGRESS.md).
+/// truth. The broadcast is also best-effort (see the broadcaster contract):
+/// the transaction is persisted first, so a failed/empty push never loses data.
+///
+/// Cancellation surfaces as <see cref="OperationCanceledException"/> where it
+/// cannot be handled as part of the Result flow (documented decision, see
+/// PROGRESS.md).
 /// </summary>
 public sealed class TransactionService : ITransactionService
 {
     private readonly ITransactionStore _store;
     private readonly ITransactionCache _cache;
+    private readonly ITransactionBroadcaster _broadcaster;
+    private readonly ILogger<TransactionService> _logger;
 
-    public TransactionService(ITransactionStore store, ITransactionCache cache)
+    public TransactionService(
+        ITransactionStore store,
+        ITransactionCache cache,
+        ITransactionBroadcaster broadcaster,
+        ILogger<TransactionService> logger)
     {
         _store = store;
         _cache = cache;
+        _broadcaster = broadcaster;
+        _logger = logger;
     }
 
     public async Task<Result<Transaction>> ProcessAsync(
@@ -53,6 +67,11 @@ public sealed class TransactionService : ITransactionService
         // Write-through: best-effort refresh of the single-entry cache. The
         // full-list cache is stale by design; it is repopulated lazily by reads.
         await _cache.SetCachedAsync(transaction, ct).ConfigureAwait(false);
+
+        // Live push: best-effort (the transaction is already persisted), still
+        // honours the caller's cancellation token.
+        var clientCount = await _broadcaster.BroadcastReceivedAsync(transaction, ct).ConfigureAwait(false);
+        _logger.LogInformation("Broadcasted transaction {TransactionId} to {ClientCount} client(s).", transaction.TransactionId, clientCount);
 
         return Result<Transaction>.Success(transaction);
     }

@@ -103,4 +103,23 @@ public class TransactionIngestionApiTests : IClassFixture<WebApplicationFactory<
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    // e. SignalR hub is registered and mapped: WebSocket negotiation endpoint
+    //    answers 200 with a connection payload (no live client needed). Configure
+    //    JSON body so the negotiate request is well-formed.
+    [Fact]
+    public async Task Hub_Negotiate_ReturnsConnection()
+    {
+        using var client = CreateClient();
+
+        var response = await client.PostAsync(
+            "/hubs/transactions/negotiate?negotiateVersion=1",
+            new StringContent("{}", Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Contains("connectionId", doc.RootElement.EnumerateObject()
+            .Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
+    }
 }

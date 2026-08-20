@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
 using RTM.Api.Domain;
 using RTM.Api.Services;
 using Xunit;
@@ -10,9 +11,8 @@ using Xunit;
 namespace RTM.Tests.Services;
 
 /// <summary>
-/// TDD tests for <see cref="TransactionService"/>. A hand-rolled in-memory
-/// <see cref="ITransactionStore"/> fake keeps the tests unit-scoped to the
-/// Service (no external mock framework needed).
+/// TDD tests for <see cref="TransactionService"/>. Hand-rolled in-memory fakes
+/// keep the tests unit-scoped to the Service (no external mock framework needed).
 /// </summary>
 public class TransactionServiceTests
 {
@@ -74,13 +74,32 @@ public class TransactionServiceTests
         public ValueTask SetCachedListAsync(IEnumerable<Transaction> transactions, CancellationToken ct = default) => ValueTask.CompletedTask;
     }
 
+    /// <summary>
+    /// Fake broadcaster that records every published transaction and honours
+    /// cancellation — lets tests assert that the live push happened after a
+    /// successful persist, without a real SignalR client.
+    /// </summary>
+    private sealed class FakeBroadcaster : ITransactionBroadcaster
+    {
+        private readonly List<Transaction> _published = new();
+        public IReadOnlyList<Transaction> Published => _published;
+
+        public ValueTask<int> BroadcastReceivedAsync(Transaction transaction, CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            _published.Add(transaction);
+            return ValueTask.FromResult(1);
+        }
+    }
+
     private readonly FakeStore _store = new();
     private readonly ITransactionCache _cache = new UnavailableCache();
+    private readonly FakeBroadcaster _broadcaster = new();
     private readonly TransactionService _service;
 
     public TransactionServiceTests()
     {
-        _service = new TransactionService(_store, _cache);
+        _service = new TransactionService(_store, _cache, _broadcaster, NullLogger<TransactionService>.Instance);
     }
 
     // 1. Valid payload → Success and persisted in the store.
@@ -148,13 +167,32 @@ public class TransactionServiceTests
         Assert.Equal(2, result.Value!.Count);
     }
 
+    // 6b. Successful process publishes the transaction to the live channel.
+    [Fact]
+    public void Process_ValidPayload_PublishesToBroadcaster()
+    {
+        Run(Process(_service));
+
+        var published = Assert.Single(_broadcaster.Published);
+        Assert.Equal(ValidId, published.TransactionId);
+    }
+
+    // 6c. Failed process does NOT publish (nothing persisted, nothing broadcast).
+    [Fact]
+    public void Process_InvalidPayload_DoesNotPublishToBroadcaster()
+    {
+        Run(Process(_service, ValidId, -1m));
+
+        Assert.Empty(_broadcaster.Published);
+    }
+
     // 7. Cancelled token → documented behavior. Cancellation is an
     //    exceptional/shutdown signal, so it surfaces as OperationCanceledException
     //    (propagated from the store), NOT a Result.Failure. Design decision.
     [Fact]
     public async Task Process_CancelledToken_ThrowsOperationCanceledException()
     {
-        var service = new TransactionService(new CancellingStore(), _cache);
+        var service = new TransactionService(new CancellingStore(), _cache, _broadcaster, NullLogger<TransactionService>.Instance);
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 

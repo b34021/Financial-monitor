@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
 using RTM.Api.Domain;
 using RTM.Api.Services;
 using Xunit;
@@ -103,13 +104,20 @@ public class TransactionCacheIntegrationTests
         }
     }
 
+    /// <summary>No-op broadcaster: cache tests are unrelated to the live push.</summary>
+    private sealed class NullBroadcaster : ITransactionBroadcaster
+    {
+        public ValueTask<int> BroadcastReceivedAsync(Transaction transaction, CancellationToken ct = default)
+            => ValueTask.FromResult(0);
+    }
+
     private readonly FakeStore _store = new();
     private readonly FakeCache _cache = new();
     private readonly TransactionService _service;
 
     public TransactionCacheIntegrationTests()
     {
-        _service = new TransactionService(_store, _cache);
+        _service = new TransactionService(_store, _cache, new NullBroadcaster(), NullLogger<TransactionService>.Instance);
     }
 
     // 1. Cache-aside for GetAllAsync: first read misses (store), second read
