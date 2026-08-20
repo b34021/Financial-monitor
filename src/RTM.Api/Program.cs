@@ -21,6 +21,10 @@ builder.Services.AddCacheProvider(builder.Configuration);
 // real-time context (single-process semantics).
 builder.Services.AddSingleton<ITransactionStore, InMemoryTransactionStore>();
 
+// Application service: validates + persists transactions. Singleton is
+// appropriate for this real-time context (all connections share one instance).
+builder.Services.AddSingleton<ITransactionService, TransactionService>();
+
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 

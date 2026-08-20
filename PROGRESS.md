@@ -162,3 +162,47 @@ dotnet test    → Passed! Failed: 0, Passed: 24, Skipped: 0, Total: 24
 ### מה כדאי לבדוק בעצמי
 - 6 הבדיקות החדשות ב-`InMemoryTransactionStoreTests` — כולל בדיקת ה-concurrency (50 כותבים במקביל) ו-CancellationToken.
 - רישום ה-DI ב-Program.cs — `AddSingleton<ITransactionStore, InMemoryTransactionStore>()`.
+
+---
+
+## משימה 1.4 — Service Layer: ITransactionService + TransactionService (TDD, Result pattern)
+
+**סטטוס:** ✅ הושלם (אומת build+test, 31 בדיקות ירוקות)
+
+### קבצים שנוצרו/שונו
+- `src/RTM.Api/Domain/Result.cs` — `Result<T>` value object (Success/Failure). התשתית ל-Result pattern — שגיאות צפויות כערכים, לא Exceptions.
+- `src/RTM.Api/Domain/ITransactionService.cs` — interface (Core, טהור, ללא תלות חיצונית):
+  - `Task<Result<Transaction>> ProcessAsync(Guid id, decimal amount, string currency, TransactionStatus status, DateTimeOffset timestamp, CancellationToken ct)`
+  - `Task<Result<IReadOnlyList<Transaction>>> GetAllAsync(CancellationToken ct)`
+- `src/RTM.Api/Services/TransactionService.cs` — מימוש (Services): מאמת payload גולמי → בונה Transaction → שומר ב-`ITransactionStore` (הוזרק).
+- `tests/RTM.Tests/Services/TransactionServiceTests.cs` — 7 בדיקות TDD + Fake ידני ל-Store (ללא framework חיצוני).
+- `src/RTM.Api/Program.cs` — DI: `AddSingleton<ITransactionService, TransactionService>()`.
+
+### החלטת design מרכזית (נשאל המשתמש ואושר)
+**`ProcessAsync` מקבל raw values (guid/amount/currency/status/timestamp) — לא `Transaction`.**
+הסיבה: ה-`Transaction` הוא value object עם constructor fail-fast, כך שאובייקט לא-חוקי לעולם לא יכול להתקיים; לו ניגש ProcessAsync(Transaction), בדיקות "amount שלילי / currency פסול" היו בלתי-אפשריות (הבנייה עצמה הייתה זורקת). הבחירה המקצועית: **ה-Service יוצר את ה-Transaction בעצמו** ומחזיר `Result.Failure` על payload לא-חוקי (בלי Exception).
+
+### כללי validation (במימוש, לפני הבנייה)
+- `transactionId == Guid.Empty` → Failure
+- `amount < 0` → Failure
+- `currency` ריק או אורך ≠ 3 → Failure
+- `timestamp` רחוק בעתיד (`> now + 5min` — הניית clock-skew) → Failure
+- אחרת → בונה Transaction, `AddAsync` ל-Store, `Result.Success(transaction)`.
+
+### CancellationToken — החלטה מתועדת
+ביטול (cancellation) משוטח כ-**`OperationCanceledException`** (משוחרר מה-store), **לא** `Result.Failure` — זה אות shutdown/חריג, ולא שגיאה צפויה. מתועד בבדיקה `Process_CancelledToken_ThrowsOperationCanceledException`.
+
+### פקודות שהורצו + פלט
+```
+dotnet restore → All projects are up-to-date for restore
+dotnet build   → Build succeeded. 0 Warning(s), 0 Error(s)
+dotnet test    → Passed! Failed: 0, Passed: 31, Skipped: 0, Total: 31
+```
+(31 = 24 קודמים + 7 חדשים.)
+
+### מה כדאי לבדוק בעצמי
+- 7 בדיקות חדשות ב-`TransactionServiceTests` — במיוחד: `Process_NegativeAmount_ReturnsFailure_NoException` (ללא Exception), `Process_FarFutureTimestamp_ReturnsFailure`, `Process_CancelledToken_ThrowsOperationCanceledException`.
+- רישום ה-DI ב-Program.cs — `AddSingleton<ITransactionService, TransactionService>()`.
+
+### git
+- לא נגענו ב-git (per request — לשאול אישור לפני upload). השינויים ב-working tree ממתינים לאישורך.
