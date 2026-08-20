@@ -1,0 +1,35 @@
+# ===== .NET =====
+bin/
+obj/
+*.user
+[Tt]est[Rr]esult*/      # ~xunit result dirs (TestResults)
+results/
+TestResults/
+
+# ===== Node / frontend =====
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# ===== IDE / OS =====
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.userosscache
+*.sln.docstates
+*.swp
+*.tmp
+Thumbs.db
+.DS_Store
+
+# ===== Docker / logs =====
+docker-data/
+*.log
+.vscode/
+
+# ===== .NET user-specific =====
+.ipynb_checkpoints/
