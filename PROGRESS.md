@@ -97,10 +97,11 @@ dotnet test    → Passed! Failed: 0, Passed: 5, Skipped: 0, Total: 5
 dotnet restore → success
 dotnet build   → Build succeeded. 0 Warning(s), 0 Error(s)
 dotnet test    → Passed! Failed: 0, Passed: 18, Skipped: 0, Total: 18
+git commit ed0b34b → Task 1.2: Transaction domain model (5 fields) with invariant validation
 ```
 בדרך: Red — 3 בדיקות נכשלו כי `amount` השלילי זרק `ArgumentOutOfRangeException` והבדיקה ציפתה ל-`ArgumentException`. תיקון: איחוד לכל `ArgumentException` במודל (אחידות).
 
-> ⚠️ **שימו לב ל-commit:** בסביבה הנוכחית `git` אינו installed/זמין ב-PATH, וה-directory אינו repo פעיל כרגע. הקומיטים מ-1.0/1.1 בוצעו כנראה בסשן/סביבה קודמים. יש להריץ `git add` + `git commit` בקומפורט כשגישה ל-git תהיה זמינה (או במסננת חיצונית). כל הקבצים של 1.2 כבר כתובים על הדיסק — רק הנקודה של המעקב ל-git חסרה.
+> 📌 **git:** הותקן Git 2.47.1 (C:\Program Files\Git) וה-commit של 1.2 נבצע — `ed0b34b`. שים לב: הסשן של VS Code חייב להפעיל מחדש כדי ש-git יופיע ב-PATH (לכן בפרוטוקול להלן משתמשים בנתיב מלא).
 ### מה כדאי לבדוק בעצמי
 - `TransactionTests` ב-Test Explorer — 13 בדיקות ירוקות (פלוס 5 של משימה 1.1 = 18).
 - שימו לב: המודל משתמש ב-`Guid` עבור transactionId — ב-JSON יוצגוך `string` (GUID format) דרך קונסנציית הסריאליזציה (יתבהר ב-2.1).
