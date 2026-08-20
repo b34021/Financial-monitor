@@ -50,6 +50,11 @@ PROGRESS.md           → יומן התקדמות (לא למחוק היסטור�
 - **בדיקות תקינות (Sanity) ו-code review אחרי כל תת-משימה:** בסוף כל תת-משימה (לא רק משימה מלאה) — לבצע סקירה עצמית של הקוד שכתבתי (נקיון, SOLID, Result pattern, CancellationToken, Nullability, TreatWarningsAsErrors, היעדר `new` של שירות), ולוודא סןניטי בסיסי (שפות, שמות, כיווניות עברית). לתקן מה שצריך בטרם STOP.
 - **STOP-AND-REPORT:** אחרי כל משימה לעצור, להסביר בעברית מה נעשה, ולתת למשתמש לבדוק לפני שעוברים הלאה.
 
+## עקרונות עבודה
+- בחר תמיד בפתרון **הפשוט ביותר שעומד בדרישות** (בלי סיבוך מיותר).
+- אם יש שתי דרכים רלוונטיות — הצג את **המקצועית יותר**, ותן לי להחליט.
+- **TDD (Red→Green→Refactor), Layers, DI, Result pattern, CancellationToken, Logging, Config-from-appsettings** — חובה בכל שכבת קוד.
+
 ## בונוס (חובה — נתפס ב-Part 4)
 - Dockerfile multi-stage קטן ל-production + docker-compose (app + redis) + Kubernetes (deployment.yaml, service.yaml).
 - README.md קצר + docs/ADR.md עם הפתרון המוצע לסנכרון בין 5 מופעים (PowerDuplication/Redis pub-sub).
@@ -60,3 +65,43 @@ PROGRESS.md           → יומן התקדמות (לא למחוק היסטור�
 - React + TypeScript (Vite + react-router-dom)
 - Redis (StackExchange.Redis) ← fallback InMemory כשאין קונטיינר
 - SignalR (ASP.NET Core WebSockets)
+
+═══════════════════════════════════
+חוקי ארכיטקטורה (חובה, בכל שלבי הפרויקט)
+═══════════════════════════════════
+
+1. שכבת שירותי - חלוקה בתוך src/RTM.Api:
+   - Api (Presentation): אנדפוינטים/Controllers, Program.cs, חיבורים.
+   - Services (Application): לוגיקה עסקית, מעבדים, אינטגרציה (קאש/שידור).
+   - Core/Domain (טהור): מודלים, interfaces, חוקי-דומיין, ללא תלות חיצונית.
+
+2. כיווניות תלות (כלל זהב - Depends-on):
+   - Api תלויה ב-Services.
+   - Services תלויה ב-Core.
+   - Core אינה תלויה באף שכבה אחרת (טהורה).
+   - לעולם לא תלות הפוכה (Core לא קוראת ל-Api/Busness).
+   - אין ערבוב ישיר של API עם Store/קאש - הכל עובר דרך Services.
+
+3. Dependency Injection (DI) - חובה:
+   - כל התלויות נרשמות במרכז, ב-Program.cs (DI Container).
+   - אסור ליצור אובייקטים עם 'new' מפוזר בקוד העסקי (לא נגיד new Store/new Redis בתוך controller/class בקשתי).
+   - כל רכיב מקבל את תלויותיו דרך constructor (constructor DI).
+
+4. Sample זרימה נכונה (נושא שלא אסטה ממנו):
+   - API מקבל בקשת (POST) → שולח ל-Service.
+   - Service מעבד/מאמת → קורא ל-Core (Store/interfaces).
+   - אחרי עיבוד, Service מטפל בקאש/שידור במועיל (לוגיקה).
+   - מחזיר תוצאה (Result pattern) ל-API.
+
+5. טיפול בשגיאות צפויות:
+   - השתמש ב-Result pattern (לא Exceptions) לשגיאות ידועות וצפויות.
+   - Exceptions שמורות למצבי-חוסר בלתי צפויים בלבד.
+
+6. סטנדרטים משלימים:
+   - CancellationToken בכל פעולת I/O/Web.
+   - Logging (ILogger) בכל ingestion + שידור.
+   - Configuration מ-appsettings (לא hardcoded - בעיקר Redis).
+   - Nullable enabled + TreatWarningsAsErrors.
+
+7. מטרת על:
+   - קוד בנוי בשכבות, בר-בדיקה (unit test לכל שכבה), בר-החלפה, ומובן - ברמת מהנדס בכיר.

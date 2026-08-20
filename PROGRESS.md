@@ -130,3 +130,35 @@ git commit ed0b34b → Task 1.2: Transaction domain model (5 fields) with invari
 ### מה כדאי לבדוק בעצמי
 - פתח את שני קובצי ה-ADR — מבנה אחיד (Decision/Context/Consequences), קצר וקריא בעברית.
 - וודא שהקישור אליהם בתיקיית docs/ הוא בפורמט ADR סטנדרטי.
+
+---
+
+## משימה 1.3 — ITransactionStore + In-Memory (ConcurrentDictionary) Thread-Safe
+
+**סטטוס:** ✅ הושלם (אומת build+test, 24 בדיקות ירוקות)
+
+### קבצים שנוצרו/שונו
+- `src/RTM.Api/Domain/ITransactionStore.cs` — interface (Core/Domain, טהור):
+  - `Task AddAsync(Transaction t, CancellationToken ct)`
+  - `Task<IEnumerable<Transaction>> GetAllAsync(CancellationToken ct)`
+  - `Task<Transaction?> GetByIdAsync(string id, CancellationToken ct)`
+- `src/RTM.Api/Services/InMemoryTransactionStore.cs` — מימוש (Services): `ConcurrentDictionary<string, Transaction>`, key = guid-string. אין לוגיקה עסקית — רק אחסון.
+- `tests/RTM.Tests/Services/InMemoryTransactionStoreTests.cs` — 6 בדיקות TDD (נכתבו קודם — Red, מימוש שיקף אותן — Green).
+- `src/RTM.Api/Program.cs` — רישום DI: `AddSingleton<ITransactionStore, InMemoryTransactionStore>()`.
+
+### החלטות עיצוב + סיבה
+- **Thread-Safety:** `ConcurrentDictionary` (+ `CancellationToken` בכל פעולה). כל mutation אטומי (indexer write = add-or-replace). `GetAllAsync` מחזיר snapshot (`.Values.ToList()`) — תקיעות קריאה עקבית גם בזמן כתיבה.
+- **התנהגות על id כפול (duplicate):** בחירה מתועדת — **Replace (latest wins)**. הוספת אותו transactionId שוב מחליפה את הרשומה, נשמרת בדיוק ערך אחד. (חלופה הדחה נדחתה — גישה "אחרון מנצח" פשוטה ועקבית עם מודל אחסון keyed.) בקוד תודה.
+- **DI: Singleton** — שכן בגוף של זמן-אמת כל החיבורים חייבים לחלוק **אותה** פנייה ל-store (אחרת מופעים נפרדים יפיצו נתונים מבודדים). In-Memory עם Singleton = עקביות בתוך מופע אחד.
+- **`GetByIdAsync(string)` לעומת `Transaction.Guid`:** ה-interface מקבל string (guid-string) לפי הדרישה; המימוש משתמש בו ישירות כפתח ב-ConcurrentDictionary — `TryGetValue` מחזיר null עבור מפתח לא-תקין/לא-קיים (התנהגות נתמכת).
+- אין לוגיקה עסקית נוספת — רק אחסון, עמידה בציווי ה-Layered (Services → Core).
+
+### פקודות שהורצו + פלט
+```
+dotnet restore → All projects are up-to-date for restore
+dotnet build   → Build succeeded. 0 Warning(s), 0 Error(s)
+dotnet test    → Passed! Failed: 0, Passed: 24, Skipped: 0, Total: 24
+```
+### מה כדאי לבדוק בעצמי
+- 6 הבדיקות החדשות ב-`InMemoryTransactionStoreTests` — כולל בדיקת ה-concurrency (50 כותבים במקביל) ו-CancellationToken.
+- רישום ה-DI ב-Program.cs — `AddSingleton<ITransactionStore, InMemoryTransactionStore>()`.
