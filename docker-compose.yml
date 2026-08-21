@@ -1,0 +1,36 @@
+# ==============================================================================
+# RTM — local cloud stack
+#   docker compose up --build
+#
+# Runs the backend API + a Redis instance. The backend falls back to its
+# in-memory cache provider if Redis is unreachable, so the stack is resilient
+# even before Redis is healthy.
+# ==============================================================================
+name: rtmonitor
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: src/RTM.Api/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      # Connection string for StackExchange.Redis (double-underscore = ':').
+      # Overridden via env, never hardcoded in code.
+      Redis__Configuration: "redis:6379"
+      Redis__Enabled: "true"
+      ASPNETCORE_ENVIRONMENT: "Production"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

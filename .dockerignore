@@ -1,0 +1,22 @@
+# ===== Build artifacts =====
+**/bin/
+**/obj/
+**/*.user
+**/TestResults/
+
+# ===== Node / frontend (not needed for the backend image build) =====
+client/node_modules/
+client/dist/
+client/*.local
+client/.vite/
+
+# ===== VCS / IDE =====
+.git/
+.gitignore
+.vs/
+.vscode/
+.idea/
+
+# ===== Logs / misc =====
+*.log
+*.tmp

@@ -664,3 +664,70 @@ npm run lint  → ✓ oxlint — 0 בעיות (כולל typescript/no-explicit-a
 
 ### ❗ STOP
 - **עצירה לצורך אישורך:** 3.4 אומת ירוק (build/test/lint). לא עוברים ל-3.5 (Cloud) בלי אישורך.
+
+---
+
+## משימה 3.5 — Cloud-ready / Distributed + Deployment + תיעוד ✅
+
+**מטרה:** להפוך את הפרויקט למוכן-קלאוד/דיפלוי: Docker multi-stage, docker-compose,
+Kubernetes manifests, README, ו-ADR לקראת 5 מופעים (SignalR Redis Backplane).
+"בונוס" זה נחשב חובה ואינו עוקף.
+
+### א) Dockerfile (src/RTM.Api/Dockerfile) — multi-stage, קטן
+- **Shll שלב build:** `mcr.microsoft.com/dotnet/sdk:8.0` → `dotnet restore` (נפרד
+  לשם caching layer) + `dotnet publish -c Release -o /app/publish`.
+- **שלב runtime:** `mcr.microsoft.com/dotnet/aspnet:8.0` → `COPY --from=build`,
+  `EXPOSE 8080`, `ENV ASPNETCORE_URLS=http://+:8080`, `ENTRYPOINT ["dotnet","RTM.Api.dll"]`.
+- **`.dockerignore`** (שורש): מניעת `**/bin/`, `**/obj/`, `client/node_modules/`,
+  `client/dist/`, `.git/`, `.vscode/`, `*.log`.
+
+### ב) docker-compose.yml (שורש)
+- service `backend` (build מ-`src/RTM.Api/Dockerfile`, port 8080) + service `redis`
+  (`redis:7-alpine`, port 6379, healthcheck `redis-cli ping`).
+- `backend.depends_on: redis (service_healthy)`.
+- **env** (`Redis__Configuration=redis:6379`, `Redis__Enabled=true`,
+  `ASPNETCORE_ENVIRONMENT=Production`) — לא hardcoded בקוד, עוקפים את appsettings.
+- ללא `container_name` (מניעת התנגשויות ב-up חוזר).
+
+### ג) Kubernetes — k8s/
+- **deployment.yaml:** `rtmonitor-api`, replicas: **3**, image `rtmonitor-api:latest`,
+  port 8080, `readinessProbe` + `livenessProbe` על `/health`, `resources`
+  (requests 100m/128Mi, limits 500m/512Mi), env (Redis__Configuration → redis:6379).
+  + `Service ClusterIP` 8080.
+- **redis.yaml:** `redis` deployment (1 replica, `redis:7-alpine`) + `Service ClusterIP` 6379.
+- **ללא secrets בפועל** — env inline, נקי.
+
+### ד) README.md (שורש)
+קצר: מה זה; **Architecture** (שכבות + SignalR + Redis + fallback); **Quick Start**
+(`dotnet run --project src/RTM.Api` + `cd client && npm run dev`); **Docker**
+(`docker compose up --build`); **K8s** (`kubectl apply -f k8s/…` + port-forward);
+הערה: גרסה עובדת HD-to-HD.
+
+### ה) docs/ADR-003-signalr-redis-backplane.md — לקראת 5 מופעים
+- **הבעיה:** כל Pod מחזיק hub מקומי → לקוחות של Pod B אינם מקבלים עסקה שנכנסה ל-Pod A.
+- **הפתרון:** SignalR Redis Backplane (`AddStackExchangeRedis`): עסקה ב-Pod A →
+  pub/sub ב-Redis → מועברת ל-B/C → כולם משדרים ללקוחות שלהם.
+- **זרימה מומחשת** (דיאגרמת ASCII), יתרונות (עקביות מלאה, מנוף קיים, שקוף),
+  מגבלות (latency נוספת, Redis=SPOF ללא HA), חלופות שנשקלו, ושלב יישום עתידי.
+
+### ו) אימות — הוראות ידניות (לא הרצתי Docker — דורש Docker Desktop / אישור)
+בתיעוד README. להרצה מקומית:
+```
+docker build -f src/RTM.Api/Dockerfile -t rtmonitor-api .     # בנייה ידנית
+docker compose up --build                                     # stack מלא (api + redis)
+kubectl apply -f k8s/redis.yaml
+kubectl apply -f k8s/deployment.yaml
+kubectl port-forward svc/rtmonitor-api 8080:8080
+```
+
+### code review / sanity עצמי
+- **Dockerfile**: multi-stage, zero-config בשרת runtime, .dockerignore כן. ✅
+- **Compose/K8s YAML** — נבדקו קריאה מלאה; אין secrets; env עוקפים config. ✅
+- **הקוד (לא נגע ב-3.5):** `dotnet build` → 0 Warnings, 0 Errors (sanity). ✅
+- **README/ADR** — תיעוד מלא ואף מפורט על ה-5 מופעים ו-HD-to-HD. ✅
+
+### git
+- לא בוצע git add/commit — כל 6 קבצים חדשים + PROGRESS.md ב-working tree ממתינים לאישורך.
+
+### ❗ STOP
+- **עצירה לצורך אישורך (שלב אחרון):** 3.5 הושלם. ללא אישורך — לא commit, לא המשך.

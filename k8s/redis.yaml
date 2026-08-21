@@ -1,0 +1,53 @@
+# ==============================================================================
+# redis — in-cluster Redis for the RTM stack
+#
+# Simple single-instance (non-persistent-by-default) Redis used by the API's
+# cache provider and as the future SignalR Redis backplane (see docs/ADR-003).
+# Accessible as "redis" on port 6379 within the cluster.
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: rtmonitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: rtmonitor
+spec:
+  selector:
+    app.kubernetes.io/name: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+      protocol: TCP
+  type: ClusterIP
