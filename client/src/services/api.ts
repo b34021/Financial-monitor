@@ -23,12 +23,29 @@ function toReadableErrorMessage(error: unknown): string {
   return body?.error ?? body?.title ?? `HTTP ${error.response?.status ?? 0}`;
 }
 
-/** POST a raw transaction payload to the ingestion endpoint. */
-export async function ingestTransaction(payload: IngestTransactionRequest): Promise<Transaction> {
+/**
+ * POST a raw transaction payload to the ingestion endpoint.
+ *
+ * `signal` (optional) lets the caller abort an in-flight request — react-query
+ * passes the AbortSignal it holds for the mutation, which aborts the underlying
+ * HTTP call when the component unmounts or a new submit starts. An aborted
+ * request surfaces as an axios CanceledError, which we surface as an
+ * AbortError (matched by the caller's cancellation handling).
+ */
+export async function ingestTransaction(
+  payload: IngestTransactionRequest,
+  signal?: AbortSignal,
+): Promise<Transaction> {
   try {
-    const { data } = await api.post<Transaction>('/transactions', payload);
+    const { data } = await api.post<Transaction>('/transactions', payload, { signal });
     return data;
   } catch (error) {
+    // Bail out of cancellation/abort without wrapping it — the caller treats
+    // it as a non-error (see useIngestTransaction). Everything else becomes a
+    // readable message.
+    if (axios.isCancel(error)) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
     throw new Error(toReadableErrorMessage(error));
   }
 }

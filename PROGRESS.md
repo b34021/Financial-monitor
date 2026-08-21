@@ -504,3 +504,46 @@ npm run lint  → oxlint — 0 errors (כולל typescript/no-explicit-any)
 
 ### ❗ STOP
 - **עצירה לצורך אישורך:** המשימה הושלמה וירוק (build+lint). נתבקש לבדוק, ואם מאשרים — להחליט על git.
+
+---
+
+## משימה 3.2 — סימולטור עסקאות (/add) — השלמת עמידה בדרישות ✅
+
+**מטרה:** ודא שדף ה-/add (הסימולטור) עומד בכל דרישות 3.2: מודל TS תואם 5 שדות,
+Layers (client→API בלבד), strict TS, Cancellation/abort, סטטוס UX מינימלי OK/Error.
+חלק הארי כבר נבנה ב-3.1 (axios+useMutation+RHF+zod); הפער שהושלם עכשיו: **Cancellation**.
+
+### פער שאותר והשלמתו
+- **react-query v5 אינה מוסרת `AbortSignal` ל-mutationFn** (בניגוד ל-queryFn) — ה-signature
+  של mutationFn context הוא `{client, meta, mutationKey}`, ללא `signal`. אומת ע"י בדיקת
+  ה-d.ts של `@tanstack/query-core` המותקן (v5.101.4).
+- **פתרון:** ה-hook `useIngestTransaction` מחזיק `AbortController` ב-`useRef`:
+  - re-submit מבטל את ה-request הקודם (`abortRef.current?.abort()` בפתיחת mutationFn).
+  - `useEffect` cleanup על unmount של העמוד מבטל request תלוי-אוויר.
+  - ה-signal מועבר אל `ingestTransaction(payload, signal)` → axios `{ signal }`.
+- **`api.ts`:** `ingestTransaction` קיבל `signal` אופציונלי; axios cancel → נזרק
+  `DOMException('Aborted','AbortError')` כדי שהקורא יזהה ביטול כ-Deferred-error, לא כ-failure.
+- **`AddPage.tsx`:** `isAborted` (name === 'AbortError') מסונן — ביטול אינו מרנדר הודעת error.
+
+### קבצים
+- ✏️ `client/src/services/api.ts` — `ingestTransaction(payload, signal?)` + axios cancel → AbortError.
+- ✏️ `client/src/hooks/useIngestTransaction.ts` — AbortController (useRef) + cleanup on unmount; תיעוד מדויק.
+- ✏️ `client/src/pages/AddPage.tsx` — סינון AbortError מה-UI.
+
+### וידוא עצמי (Claude) — build/lint הורצו בפועל, ירוק
+```
+npm run build → ✓ tsc -b && vite build — 0 errors (אזהרת chunk>500kB בלבד, אינה בלוק)
+npm run lint  → ✓ oxlint — 0 בעיות (כולל typescript/no-explicit-any)
+```
+
+### code review עצמי
+- **Layers:** AddPage → hook → services/api.ts. אין fetch/Axios ישירים בעמוד. ✅
+- **strict TS / no-any:** build+lint ירוק. המודל (`types/transaction.ts`) = 5 שדות זהים לשרת. ✅
+- **Cancellation:** double-submit + unmount בטוחים (AbortController ב-useRef). ✅
+- **UX:** notice OK (persisted echo) / Error (מסר backend מ-400); ביטול שקט. ✅
+
+### git
+- לא בוצע git add/commit — השינויים (משימה 3.2) ב-working tree ממתינים לאישורך.
+
+### ❗ STOP
+- **עצירה לצורך אישורך:** 3.2 הושלם וירוק (build+lint). לא עוברים הלאה עד אישורך (git/המשך).

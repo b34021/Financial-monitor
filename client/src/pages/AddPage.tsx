@@ -51,6 +51,10 @@ export function AddPage() {
 
   const { mutate, data: result, error, isPending } = useIngestTransaction();
 
+  // A deliberate cancellation (component unmount / re-submit while a previous
+  // request is in flight) surfaces as an AbortError — never a user-facing error.
+  const isAborted = error instanceof DOMException && error.name === 'AbortError';
+
   const onSubmit = (values: AddTransactionFormValues) => {
     mutate({
       transactionId: crypto.randomUUID(),
@@ -109,7 +113,7 @@ export function AddPage() {
         </div>
       )}
 
-      {error && (
+      {!isAborted && error && (
         <div className="notice notice--error" data-testid="add-error">
           {error instanceof Error ? error.message : 'Unable to send the transaction.'}
         </div>
