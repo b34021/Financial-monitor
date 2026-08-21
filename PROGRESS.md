@@ -449,3 +449,58 @@ dotnet test    → Passed! Failed: 0, Passed: 44, Skipped: 0, Total: 44   (42 ק
 
 ### ❗ STOP
 - **עצירה לצורך אישורך:** כחלק מההידר-מטלה 2.3 הושלם וירוק (44/44). לא עוברים הלאה עד אישורך.
+
+---
+
+## משימה: חוקי כתיבה ל-`client/` + הפיכתם לאכיפיים (AGENTS.md + רפקטור)
+
+### מה נעשה
+1. **`client/AGENTS.md`** (חדש) — קובץ כללים (RULES) ייעודי לקליינט, 10 כללים:
+   1) קומפוננטה ≤150 שורות; 2) חלוקה לפי נושא (edit/add בקומפוננטה אחת, תצוגה×הוספה בשתיים);
+   3) קריאות שרת בתיקיית `services/`; 4) תגיות חוזרות → קומפוננטה משותפת; 5) שמות ברורים;
+   6) כל קריאות שרת → axios + @tanstack/react-query (SignalR = חריג מוצהר); 7) React Router v7
+   `createBrowserRouter`+`RouterProvider` עם `Outlet`; 8) אסור `any` (עם חריג `step="any"` HTML);
+   9) מודלים בתיקיית `types/`; 10) טפסים → react-hook-form + zod.
+   - הערות/יחידות: UI באנגלית בלבד; SignalR חריג לכלל 6.
+2. **`CLAUDE.md`** — נוספה הפניה קצרה ל-`client/AGENTS.md` (במקום לשפוך תוכן).
+3. **תלויות חדשות** ב-`client`: `axios`, `@tanstack/react-query`, `react-hook-form`, `zod`, `@hookform/resolvers`.
+4. **רפקטור `services/api.ts`** — fetch → axios (instance + baseURL), חילוץ הודעת שגיאה אנושית מ-400, שמירה על `SIGNALR_HUB_URL`.
+5. **`client/src/hooks/useIngestTransaction.ts`** (חדש) — tanstack-query `useMutation` עוטף את הקריאה + invalidation.
+6. **`pages/AddPage.tsx`** — עבר ל-`react-hook-form` + `zodResolver` (schema עם amount-refine), + ה-hook החדש (isPending/error/result מ-React Query במקום try/catch ידני). UI באנגלית.
+7. **`main.tsx`** — מעבר מ-`<BrowserRouter><Routes>` ל-**`createBrowserRouter`+`RouterProvider`** + `QueryClientProvider`.
+8. **אכיפת no-`any`**: `tsconfig.app.json` ← `strict`+`noImplicitAny`; `.oxlintrc.json` ← `typescript/no-explicit-any: error`.
+9. **`index.html`** ← `lang="en" dir="ltr"`; **`App.tsx`/`MonitorPage.tsx`/`index.css`** ← ממשק באנגלית בלבד (ללא עברית).
+
+### וידוא עצמי (Claude) — build/lint הורצו בפועל, ירוק
+```
+cd client
+npm install → added 33 packages, audited 82, 0 vulnerabilities
+npm run build → ✓ built in ~1.5s (tsc -b && vite) — 0 errors
+npm run lint  → oxlint — 0 errors (כולל typescript/no-explicit-any)
+```
+> הערת build: אזהרה על chunk >500 kB (React+Router+React Query+axios bundled) — לא בלוק ביצוע.
+
+### code review עצמי
+- **קריאות שרת**: רק דרך `services/api.ts` (axios) + ה-hook; אין fetch/Axios פזורים בעמודים. ✅
+- **SignalR** (ערוץ live) נשאר ב-`signalR.ts` כ-`@microsoft/signalr` — חריג מתועד לכלל 6. ✅
+- **אין `any` בקוד** (ה-schema עם `z.string().refine` נמנע מ-`z.coerce` שעורר `any` ב-RHF). ✅
+- **UI אנגלית בלבד** — 0 תווים עבריים ב-tsx/ts/html (נבדק ע"י ripgrep). ✅
+- **RHF+zod**: schema טיפוסי (z.infer), שגיאות per-field מוצגות. `step="any"` = ערך HTML חוקי, לא הפרה. ✅
+- **ראאוטר**: `createBrowserRouter`+`RouterProvider` במבנה יחיד; `App.tsx` מספק `Outlet`. ✅
+
+### קבצים
+- 🆕 `client/AGENTS.md` — 10 כללי הכתיבה.
+- 🆕 `client/src/hooks/useIngestTransaction.ts` — mutation hook.
+- ✏️ `client/src/services/api.ts` — fetch → axios.
+- ✏️ `client/src/pages/AddPage.tsx` — RHF+zod + hook (UI אנגלית).
+- ✏️ `client/src/main.tsx` — createBrowserRouter + QueryClientProvider.
+- ✏️ `client/src/App.tsx`, `client/src/pages/MonitorPage.tsx`, `client/src/index.css`, `client/index.html` — ממשק אנגלית.
+- ✏️ `client/tsconfig.app.json` (strict+noImplicitAny), `client/.oxlintrc.json` (no-explicit-any).
+- ✏️ `client/package.json`/`package-lock.json` — 5 תלויות חדשות.
+- ✏️ `CLAUDE.md` — הפניה ל-`client/AGENTS.md`.
+
+### git
+- לא בוצע git add/commit/push — השינויים ב-working tree ממתינים לאישורך.
+
+### ❗ STOP
+- **עצירה לצורך אישורך:** המשימה הושלמה וירוק (build+lint). נתבקש לבדוק, ואם מאשרים — להחליט על git.

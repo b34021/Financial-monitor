@@ -15,6 +15,13 @@ docs/ADR.md           → החלטות ארכיטקטוניות
 PROGRESS.md           → יומן התקדמות (לא למחוק היסטוריה — להוסיף למטה)
 ```
 
+**כללי כתיבת הקליינט (React/TS) — חובה לקרוא לפני עבודה בתיקיית `client/`:
+[client/AGENTS.md](client/AGENTS.md)** (10 כללים: גודל קומפוננטה, חלוקה לפי נושא,
+services/, רכיבים משותפים, שמות, axios+tanstackQuery, createBrowserRouter,
+איסור `any`, מודלים ב-types/, טפסים = RHF+zod). לפי כלל-הפניה: הכללים הייעודיים
+נשמרים בקובץ היעודי (`client/AGENTS.md`) ומצוינים כאן בהפנייה קצרה, במקום לשפוך
+את כולו ל-CLAUDE.md הראשי.
+
 ## מודל Transaction (ייחוד — 5 שדות בלבד, לפי ה-JSON במטלה)
 `transactionId (guid-string)`, `amount (decimal)`, `currency (ISO 3)`,
 `status (enum: Pending|Completed|Failed)`, `timestamp (DateTimeOffset, UTC ISO-8601)`.
