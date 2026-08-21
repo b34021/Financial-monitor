@@ -605,3 +605,62 @@ npm run lint  → ✓ oxlint — 0 בעיות (כולל typescript/no-explicit-a
 
 ### ❗ STOP
 - **עצירה לצורך אישורך:** 3.3 הושלם וירוק (build+lint). לא עוברים הלאה עד אישורך (git/המשך).
+
+---
+
+## משימה 3.4 — בדיקות סופיות ואימות מלא (End-to-End) ✅
+
+**מטרה:** לוודא ש-backend (1.0–2.3) + frontend (3.1–3.3) עומדים בנטל הסופי, ושהחיבור
+HD-to-HD מתועד כהוראות אקטיביות למשתמש. אוטומציה לכמה שיותר, הוראות ידניות מפורטות.
+
+### א) אימות Backend — הורצה בפועל, ירוק
+```
+dotnet restore → ✓ All projects up-to-date
+dotnet build   → ✓ Build succeeded. 0 Warning(s), 0 Error(s)
+dotnet test    → ✓ Passed: 44, Failed: 0, Skipped: 0, Total: 44 (RTM.Tests, 4s)
+```
+- **0 warnings** ← TreatWarningsAsErrors פעיל, ואין אזהרות כלל.
+
+### ב) אימות Frontend — הורצה בפועל, ירוק
+```
+cd client
+npm run build → ✓ tsc -b && vite build — 0 errors
+                (אזהרת chunk>500kB בלבד מ-SignalR bundle, אינה בלוק)
+npm run lint  → ✓ oxlint — 0 בעיות (כולל typescript/no-explicit-any)
+```
+- **Test script:** אין. לא קיים `test` ב-package.json ואין קבצי `*.test.*`/`*.spec.*`
+  (אין vitest/jest מותקן). לפי 3.4 — לא נוסף בעצמי; ממתין להחלטתך אם להקים מערך בדיקות UI.
+
+### ג) בדיקת אינטגרציה HD-to-HD — הוראות אקטיביות למשתמש (לא הורצה ע"י Claude)
+**פורטים:** Backend http-profile `http://localhost:5248`; Vite dev `http://localhost:5173`
+(proxy: `/api`+`/hubs` עוברים אל `:5248`). **Cache-backed history** עובד דרך
+`InitialTransactions` על connect.
+
+**להרצה מפורטת (Terminals נפרדים):**
+1. **Terminal 1 — backend:** `dotnet run --project src/RTM.Api` (התחל מ-root project; ישתמש
+   בprofile http → `http://localhost:5248`, יפתח swagger).
+2. **Terminal 2 — client:** `cd client && npm run dev` (→ `http://localhost:5173`).
+
+**תרחיש הבדיקה:**
+- פתח `http://localhost:5173/add` — מלא Amount/Currency/Status, שלח 3–4 עסקאות מעורבות
+  (כולל לפחות אחת עם status = Failed).
+- פתח כרטיסייה חדשה `http://localhost:5173/monitor`:
+  - ראה את העסקאות מופיעות **חיות** (כולל צבעי הבאדג' Pending/Completed/Failed ואנימציית הכניסה).
+  - הדלק toggle **"Show only errors"** → רק ה-Failed נשארו.
+- **וריאנט היסטוריה:** סגור את /monitor ופתח שוב — העסקאות שמורות מגיעות מייד
+  (InitialTransactions מהקאש), גם בלי לשלוח חדשות.
+
+**תוצאות HD-to-HD:** השלם את הצעדים הללו (הוראות אקטיביות לעיל), ואז עדכן את
+רשומה זו או FYI למשתמש. עד אז — מצב זה מתועד כ"**ממתין אישור המשתמש לבצע**"
+(בדיקה HD-to-HD דורשת סביבה אנושית בלבד: פתיחת דפדפן + התבוננות ב-UI חי).
+
+### ד) סקירת שרידות (sanity) ✅
+- **PROGRESS.md** — מעודכן ברשומה זו (ורשומות 3.1–3.3 קודם).
+- **CLAUDE.md** — מעודכן, כולל חוקי cloud-ready/Docker/K8s/README/ADR (ל-3.5 הפתוח).
+- **.gitignore** — מכסה: `bin/`, `obj/`, `node_modules/`, `dist/` (וגם `.vs/`, `.vite/`). ✅
+
+### git
+- לא בוצע git add/commit — השינויים (רשומת 3.4 ב-PROGRESS.md) ב-working tree ממתינים לאישורך.
+
+### ❗ STOP
+- **עצירה לצורך אישורך:** 3.4 אומת ירוק (build/test/lint). לא עוברים ל-3.5 (Cloud) בלי אישורך.
