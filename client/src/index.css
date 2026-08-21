@@ -228,3 +228,46 @@ body {
   background: color-mix(in srgb, var(--bad) 18%, transparent);
   color: var(--bad);
 }
+
+/* ---- Error filter toggle ---- */
+.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  padding: 0.25rem 0.5rem;
+  border-radius: 8px;
+}
+.filter:hover {
+  background: var(--bg);
+}
+.filter input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ---- New-transaction animation ---- */
+/* Runs only when a card mounts (React adds a fresh node for each new tx), so
+   only the newest entry animates in — the existing list is not re-rendered. */
+@keyframes tx-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.tx-card {
+  animation: tx-enter 0.28s ease-out;
+}
+.page__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}

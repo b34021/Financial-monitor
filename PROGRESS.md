@@ -547,3 +547,61 @@ npm run lint  → ✓ oxlint — 0 בעיות (כולל typescript/no-explicit-a
 
 ### ❗ STOP
 - **עצירה לצורך אישורך:** 3.2 הושלם וירוק (build+lint). לא עוברים הלאה עד אישורך (git/המשך).
+
+---
+
+## משימה 3.3 — המוניטור החי (/monitor) — השלמה ✅
+
+**מטרה:** דף /monitor שמתחבר ל-SignalR hub (`/hubs/transactions`), מקבל היסטוריה
+(`InitialTransactions`) ועסקאות חדשות (`TransactionReceived`) בזמן-אמת, עם:
+סטטוסים צבעוניים, toggle "Show only errors", ביצועים (cap/limit), ואנימציה קלה
+(Enhanced UI = חובה).
+
+### החלטת ביצועים — **cap/limit (200) נבחר** על פני virtualization
+- מטרת הפרויקט: עד כ-100 עסקאות בלי הקפאה; cap פשוט ובטוח — `MAX_TRANSACTIONS=200`.
+- **Smart update:** `setTransactions((prev) => …)` — functional update רק מוסיף ראש חדש,
+  לא מעצב מחדש את שאר הרשימה; האלמנטים הקיימים נשארים intact (React לא מרנדר אותם מחדש).
+- מיון לפי `timestamp` (desc) בכל עדכון — שומר שהסדר תקין גם אם אירועים מגיעים לא-בסדר.
+- Virtualization הושאר כתובה להגדלת עומס עתידית — לא נדרש לנו כעת (כלל: הפתרון הפשוט ביותר).
+
+### ארכיטקטורת הקוד — הפרדת לוגיקה מהעמוד
+- **`hooks/useLiveTransactions.ts`** (🆕) — בעל הרשימה (useState), החיבור (SignalR + `useRef`
+  + cleanup על unmount), מיון, cap 200, ואת ה-filter state. מחזיר `{transactions, totalCount,
+  connectionState, showOnlyFailed, toggleFailedOnly}`. העמוד לא מחזיק שום רשת.
+- **`components/ErrorFilterToggle.tsx`** (🆕) — checkbox "Show only errors".
+- **`pages/MonitorPage.tsx`** (✏️) — 49 שורות (≤150): קורא ל-hook ולרכיבים בלבד;
+  ללא fetch, ללא try/catch, ללא `any`. Pill חיבור (connecting/connected/failed).
+- **`services/signalR.ts`** (קיים, מושאר) — `TransactionHubClient` עם `withAutomaticReconnect()`
+  (reconnect אוטומטי), `conn.on('InitialTransactions'/'TransactionReceived')`, `start()`/`dispose()`.
+  **SignalR = החריג המוצהר** לכלל axios/react-query (AGENTS).
+- **`components/StatusBadge.tsx`** (קיים, מנוצל ע"י TransactionCard) — Pending(warn)/Completed(ok)/Failed(bad).
+- **`index.css`** (✏️) — אנימציה `@keyframes tx-enter` על `.tx-card` (fade+slide+scale, 0.28s),
+  רצה רק ב-mount של צומת חדש (רק עסקה חדשה מתעוררת); סגנון `.filter`.
+
+### קבצים
+- 🆕 `client/src/hooks/useLiveTransactions.ts`
+- 🆕 `client/src/components/ErrorFilterToggle.tsx`
+- ✏️ `client/src/pages/MonitorPage.tsx` (49 שורות)
+- ✏️ `client/src/index.css` (אנימציה tx-enter + filter)
+- (קיים, ללא שינוי) `client/src/services/signalR.ts`, `client/src/components/StatusBadge.tsx`,
+  `client/src/components/TransactionCard.tsx`
+
+### וידוא עצמי (Claude) — build/lint הורצו בפועל, ירוק
+```
+npm run build → ✓ tsc -b && vite build — 0 errors (אזהרת chunk>500kB בלבד, אינה בלוק)
+npm run lint  → ✓ oxlint — 0 בעיות (כולל typescript/no-explicit-any)
+```
+
+### code review עצמי
+- **Layers:** MonitorPage → hook → services/signalR.ts; אין רשת ישירה בעמוד. ✅
+- **strict TS / no-any:** build+lint ירוק. ✅
+- **SignalR cleanup:** dispose על unmount (disposed guard) + reconnect אוטומטי. ✅
+- **Filter:** "Show only errors" מסנן רק `Failed`, עם counter ("received (errors only)"). ✅
+- **אנימציה:** ייחודית לחדש, כברירת מחדל למסך, קלה (0.28s). ✅
+- **English UI** (כלל AGENTS). ✅
+
+### git
+- לא בוצע git add/commit — השינויים (משימה 3.3) ב-working tree ממתינים לאישורך.
+
+### ❗ STOP
+- **עצירה לצורך אישורך:** 3.3 הושלם וירוק (build+lint). לא עוברים הלאה עד אישורך (git/המשך).

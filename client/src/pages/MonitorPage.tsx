@@ -1,59 +1,42 @@
-import { useEffect, useRef, useState } from 'react';
+import { ErrorFilterToggle } from '../components/ErrorFilterToggle';
 import { TransactionCard } from '../components/TransactionCard';
-import { TransactionHubClient } from '../services/signalR';
-import type { Transaction } from '../types/transaction';
+import { useLiveTransactions } from '../hooks/useLiveTransactions';
 
 /**
- * /monitor — live dashboard. On mount it connects to the SignalR hub, receives
- * the cache-backed history immediately ("InitialTransactions") and then appends
- * each freshly-ingested transaction ("TransactionReceived"), newest first.
+ * /monitor — live dashboard. Dehydrated of all network/state logic: it calls
+ * useLiveTransactions (SignalR connect/history/live/cap/filter) and renders the
+ * resulting list. No direct fetch, no try/catch, no local connection handling.
  */
 export function MonitorPage() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [connectionState, setConnectionState] = useState<'connecting' | 'connected' | 'failed'>('connecting');
-  const clientRef = useRef<TransactionHubClient | null>(null);
-
-  useEffect(() => {
-    let disposed = false;
-
-    const client = new TransactionHubClient({
-      onInitialTransactions: (history) => {
-        if (disposed) return;
-        setTransactions(history);
-        setConnectionState('connected');
-      },
-      onTransactionReceived: (tx) => {
-        if (disposed) return;
-        // Newest first; keep an internal buffer cap so the list stays light.
-        setTransactions((prev) => [tx, ...prev].slice(0, 200));
-      },
-    });
-    clientRef.current = client;
-
-    client.start().catch(() => {
-      if (!disposed) setConnectionState('failed');
-    });
-
-    return () => {
-      disposed = true;
-      void client.dispose();
-      clientRef.current = null;
-    };
-  }, []);
+  const { transactions, totalCount, connectionState, showOnlyFailed, toggleFailedOnly } =
+    useLiveTransactions();
 
   return (
     <section className="page">
       <div className="page__header">
-        <h2>Live dashboard</h2>
-        <span className={`pill pill--${connectionState}`}>
-          {connectionState === 'connecting' && 'Connecting…'}
-          {connectionState === 'connected' && 'Connected (live)'}
-          {connectionState === 'failed' && 'Connection failed'}
-        </span>
+        <div>
+          <h2>Live dashboard</h2>
+          <p className="page__hint">
+            {totalCount} transaction{totalCount === 1 ? '' : 's'} received
+            {showOnlyFailed ? ' (errors only)' : ''}.
+          </p>
+        </div>
+        <div className="page__header-actions">
+          <ErrorFilterToggle checked={showOnlyFailed} onToggle={toggleFailedOnly} />
+          <span className={`pill pill--${connectionState}`}>
+            {connectionState === 'connecting' && 'Connecting…'}
+            {connectionState === 'connected' && 'Connected (live)'}
+            {connectionState === 'failed' && 'Connection failed'}
+          </span>
+        </div>
       </div>
 
       {transactions.length === 0 ? (
-        <p className="page__empty">No transactions yet. Send one from the /add simulator.</p>
+        <p className="page__empty">
+          {showOnlyFailed
+            ? 'No failed transactions to show.'
+            : 'No transactions yet. Send one from the /add simulator.'}
+        </p>
       ) : (
         <div className="tx-feed">
           {transactions.map((tx) => (
