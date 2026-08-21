@@ -7,16 +7,28 @@ namespace RTM.Api.Api;
 
 /// <summary>
 /// SignalR hub that live dashboards (or any client) connect to in order to
-/// receive newly-ingested transactions in real time.
+/// receive newly-ingested transactions in real time, and to be handed the
+/// existing history immediately on connect (so a fresh client never starts
+/// empty).
 ///
-/// The server publishes transactions under the method name
+/// The server publishes newly-ingested transactions under the method name
 /// <c>"TransactionReceived"</c> via <see cref="IHubContext{THub}"/> (indirectly
-/// through <see cref="Domain.ITransactionBroadcaster"/>). This hub defines the
-/// client contract and tracks the connected-client count (local, per process)
-/// used for telemetry in the log line "שידור עסקה {id} ל-{N} לקוח".
+/// through <see cref="Domain.ITransactionBroadcaster"/>). On connect, the hub
+/// reads the existing history through the injected
+/// <see cref="Domain.ITransactionService"/> (cache-aside — served from the cache
+/// when Redis is connected) and sends it to the caller under
+/// <c>"InitialTransactions"</c>. The hub never talks to the store/cache directly:
+/// everything flows through the service (dependency direction preserved).
 /// </summary>
 public sealed class TransactionHub : Hub
 {
+    private readonly ITransactionService _service;
+
+    public TransactionHub(ITransactionService service)
+    {
+        _service = service;
+    }
+
     // Local connected-client count for this process, used only for telemetry.
     // It is per-process on purpose: with the multi-instance PowerDuplication
     // design (see docs/ADR.md) each instance reports its own local count rather
@@ -24,10 +36,26 @@ public sealed class TransactionHub : Hub
     public static int ConnectedClients => Volatile.Read(ref _connectedClients);
     private static int _connectedClients;
 
-    public override Task OnConnectedAsync()
+    public override async Task OnConnectedAsync()
     {
         Interlocked.Increment(ref _connectedClients);
-        return base.OnConnectedAsync();
+
+        // History handoff (cache-backed via the service): send the existing
+        // transactions to the just-connected client so it does not start empty.
+        // Best-effort on the failure/cancel path — the connection itself must
+        // not be torn down because a history read failed.
+        try
+        {
+            var history = await _service.GetAllAsync(CancellationToken.None).ConfigureAwait(false);
+            if (history.IsSuccess)
+                await Clients.Caller.SendAsync("InitialTransactions", history.Value).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown/cancellation — nothing to log, the connection is going away.
+        }
+
+        await base.OnConnectedAsync().ConfigureAwait(false);
     }
 
     public override Task OnDisconnectedAsync(Exception? exception)
@@ -47,3 +75,4 @@ public sealed class TransactionHub : Hub
         await Clients.All.SendAsync("TransactionReceived", transaction).ConfigureAwait(false);
     }
 }
+

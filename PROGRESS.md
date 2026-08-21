@@ -398,3 +398,54 @@ dotnet run --project src/RTM.Api --no-build  (ASPNETCORE_URLS=http://localhost:5
 
 ### ❗ STOP
 - **לא עוברים ל-2.3 עד אישורך.**
+
+---
+
+## משימה 2.3 — היסטוריה מהקאש על חיבור (cache-backed history on connect) ✅
+
+**מטרה:** לקוח שמתחבר ל-`TransactionHub` מקבל מיד את העסקאות הקיימות
+(`InitialTransactions`) מהקאש — לא מתחיל ריק.
+
+### מה בוצע
+- **`src/RTM.Api/Api/TransactionHub.cs`**
+  - נוסף ctor עם `ITransactionService` (הזרקת DI — ה-Hub לא נוגע ב-Store/קאש ישירות).
+  - `OnConnectedAsync` מוגדל לאסינכרוני: קורא `_service.GetAllAsync()` ושולח ל
+    `Clients.Caller.SendAsync("InitialTransactions", history.Value)`.
+  - `GetAllAsync` כבר ממושה כ-cache-aside (קאש כש-Redis פעיל → miss → Store → populate) —
+    אין שינוי ל-service; הקאש מספק את ההיסטוריה כאשר Redis מחובר (via `ITransactionCache.IsAvailable`).
+  - ה-handoff הוא **best-effort**: try/catch על נתיב כשל/ביטול כדי שהחיבור עצמו לא ייסגר בגלל קריאת היסטוריה שנכשלה.
+
+### TDD (Red → Green)
+1. **Red:** נכתבו 2 בדיקות ב-`tests/RTM.Tests/Api/TransactionHubTests.cs` נגד ctor+`OnConnectedAsync` שלא קיימים — ריצה ראשונה נכשלה (אין ctor שלוקח `ITransactionService`).
+   - `OnConnected_ExistingHistory_SendsInitialTransactionsToCaller` — קליינט שמתחבר מקבל `InitialTransactions` עם שתי העסקאות.
+   - `OnConnected_NoHistory_SendsEmptyInitialTransactions` — קליינט בלי היסטוריה מקבל רשימה ריקה (החוזה מפורש).
+   - Fakes: `FakeService` (ITransactionService), `RecordingProxy` (IClientProxy — לוכד method+args), `FakeCallerClients` (IHubCallerClients).
+2. **Green:** יישמתי את ה-ctor + `OnConnectedAsync` ב-Hub → `dotnet test` ירוק.
+
+### וידוא עצמי (Claude) — build/test הורצו בפועל, ירוק
+```
+dotnet restore → All projects are up-to-date
+dotnet build   → Build succeeded. 0 Warning(s), 0 Error(s)
+dotnet test    → Passed! Failed: 0, Passed: 44, Skipped: 0, Total: 44   (42 קיימים + 2 חדשים)
+```
+סקירה עצמית (*code review*):
+- **Layers:** Api(Hub) → Services(`ITransactionService`) → Core. אין גישה ישירה ל-Store/קאש מה-Hub. ✅
+- **DI:** `ITransactionService` מוזרק דרך ctor — אין `new` של שירות. ✅ (SignalR פותר את ה-Hub מ-DI כשמתחבר קליינט.)
+- **Result pattern:** ההיסטוריה נבדקת ב-`IsSuccess` לפני שליחה. ✅
+- **CancellationToken:** `GetAllAsync(CancellationToken.None)` — חוזה ה-handoff של החיבור לא מעביר token אחר. ✅
+- **Best-effort:** קריאת היסטוריה כושלת לא קורעת את החיבור — consistent עם תבנית הברודקאסט הקיים. ✅
+- **Nullable + TreatWarningsAsErrors:** build נקי — `history.Value` בטוח כשהדרך `IsSuccess`. ✅
+- **Sanity:** שמות, שפות, כיווניות עברית תקינים. ✅
+
+### קבצים
+- ✏️ `src/RTM.Api/Api/TransactionHub.cs` — ctor DI + history handoff ב-OnConnectedAsync.
+- 🆕 `tests/RTM.Tests/Api/TransactionHubTests.cs` — 2 בדיקות TDD (Red→Green).
+
+### שאלה לארכיטקטורה / החלטות
+- **Cancellation:** בחרתי `CancellationToken.None` ב-handoff (אין token של "הקליינט המתחבר" שנמסר ל-OnConnectedAsync בחיים). אם תרצו ביטול חיצוני — ניתן להעביר token של `HttpContext.RequestAborted` בסביבת WebSocket; נותר פתוח.
+
+### git
+- לא נגענו ב-git — השינויים (משימה 2.3) ב-working tree ממתינים לאישורך.
+
+### ❗ STOP
+- **עצירה לצורך אישורך:** כחלק מההידר-מטלה 2.3 הושלם וירוק (44/44). לא עוברים הלאה עד אישורך.
