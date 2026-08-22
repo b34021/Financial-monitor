@@ -23,7 +23,26 @@ public static class TransactionEndpoints
     {
         app.MapPost("/api/transactions", HandleIngestAsync)
            .WithName("IngestTransaction")
+           .Produces<Transaction>(StatusCodes.Status201Created)
+           .ProducesValidationProblem()
            .WithOpenApi();
+
+        // List + single-object reads. The service already exposes these (and they
+        // are covered by unit tests) — this endpoint set simply surfaces them,
+        // and makes the Location header of the POST resolve to a live URL.
+        app.MapGet("/api/transactions", HandleListAsync)
+           .WithName("GetTransactions")
+           .Produces<IEnumerable<Transaction>>(StatusCodes.Status200OK)
+           .ProducesProblem(StatusCodes.Status400BadRequest)
+           .WithOpenApi();
+
+        app.MapGet("/api/transactions/{id}", HandleGetByIdAsync)
+           .WithName("GetTransactionById")
+           .Produces<Transaction>(StatusCodes.Status200OK)
+           .Produces(StatusCodes.Status404NotFound)
+           .ProducesProblem(StatusCodes.Status400BadRequest)
+           .WithOpenApi();
+
         return app;
     }
 
@@ -65,6 +84,33 @@ public static class TransactionEndpoints
         return Results.BadRequest(new { error = result.Error });
     }
 
+    private static async Task<IResult> HandleListAsync(
+        ITransactionService service,
+        ILogger<TransactionRequest> logger,
+        CancellationToken ct)
+    {
+        var result = await service.GetAllAsync(ct).ConfigureAwait(false);
+        if (result.IsSuccess)
+            return Results.Ok(result.Value);
+
+        logger.LogWarning("List query failed: {Error}.", result.Error);
+        return Results.BadRequest(new { error = result.Error });
+    }
+
+    private static async Task<IResult> HandleGetByIdAsync(
+        string id,
+        ITransactionService service,
+        ILogger<TransactionRequest> logger,
+        CancellationToken ct)
+    {
+        var result = await service.GetByIdAsync(id, ct).ConfigureAwait(false);
+        if (result.IsSuccess)
+            return result.Value is { } tx ? Results.Ok(tx) : Results.NotFound();
+
+        logger.LogWarning("Get-by-id query failed for {Id}: {Error}.", id, result.Error);
+        return Results.BadRequest(new { error = result.Error });
+    }
+
     private static Dictionary<string, string[]> ValidateRequest(TransactionRequest request)
     {
         var errors = new Dictionary<string, string[]>();
@@ -74,8 +120,12 @@ public static class TransactionEndpoints
         {
             foreach (var r in results)
             {
-                var member = r.MemberNames is { } names ? string.Join(',', names) : string.Empty;
-                errors[member] = new[] { r.ErrorMessage ?? "Invalid value." };
+                // Object-level validation results have no member name; fall back to a
+                // stable dummy key so the error surfaces instead of a nameless "" key.
+                var member = r.MemberNames is { } names && names.Any() ? string.Join(',', names) : nameof(TransactionRequest);
+                // Multiple results for the same member share one key → aggregate messages.
+                if (!errors.TryAdd(member, new[] { r.ErrorMessage ?? "Invalid value." }))
+                    errors[member] = errors[member].Append(r.ErrorMessage ?? "Invalid value.").ToArray();
             }
         }
 

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using RTM.Api.Api;
 using RTM.Api.Caching;
 using RTM.Api.Domain;
@@ -22,6 +23,18 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 // SignalR: real-time push to live dashboards (the /monitor client).
 builder.Services.AddSignalR();
 
+// CORS: allow the browser client from the configured origins. AllowCredentials()
+// is REQUIRED for SignalR (WebSockets carry cookies/auth), and it forbids
+// AllowAnyOrigin — so origins must come from config (Cors:AllowedOrigins), not
+// a wildcard. Default: the local Vite dev server.
+builder.Services.AddCors(options =>
+    options.AddDefaultPolicy(policy => policy
+        .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+            ?? new[] { "http://localhost:5173" })
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials()));
+
 // Real-time broadcaster: pushes ingested transactions to hub clients. Best-effort
 // SignalR-backed implementation lives in the Api layer; the Services layer only
 // depends on the Core interface (dependency direction preserved).
@@ -30,11 +43,19 @@ builder.Services.AddSingleton<ITransactionBroadcaster, SignalRTransactionBroadca
 // Cache: Redis-first with transparent in-memory fallback (best-effort).
 builder.Services.AddCacheProvider(builder.Configuration);
 
+// Cache tuning options (TTL for the aggregated full-list key). Bound from the
+// "Cache" section so durations live in config, not code.
+builder.Services.Configure<CacheOptions>(builder.Configuration.GetSection("Cache"));
+
 // Transaction cache: adapts the generic cache provider to the transaction-typed
 // contract (cache-aside / write-through). Availability follows the underlying
 // provider's connection state, so reads fall back to the store when no real
-// backend is connected.
-builder.Services.AddSingleton<ITransactionCache, TransactionCache>();
+// backend is connected. The list TTL (best-effort self-expiry) is injected from
+// config via IOptions.
+builder.Services.AddSingleton<ITransactionCache>(sp => new TransactionCache(
+    sp.GetRequiredService<ICacheProvider>(),
+    sp.GetRequiredService<ILogger<TransactionCache>>(),
+    TimeSpan.FromSeconds(sp.GetRequiredService<IOptions<CacheOptions>>().Value.ListTtlSeconds)));
 
 // Transaction store: In-Memory Thread-Safe (ConcurrentDictionary) singleton.
 // Singleton so all requests/hub connections share one store instance in this
@@ -58,6 +79,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Enable the CORS policy before endpoint routing / the hub mapping so browsers
+// are allowed to call the API and open SignalR WebSockets cross-origin.
+app.UseCors();
 
 // Health probe
 app.MapGet("/health", () => Results.Ok(new { status = "ok", timestamp = DateTimeOffset.UtcNow }))

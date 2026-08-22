@@ -113,4 +113,51 @@ public class InMemoryTransactionStoreTests
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
             store.AddAsync(NewTx(), cts.Token));
     }
+
+    // 7. Bounded history (P1-4): adding more than the cap evicts the oldest,
+    //    so the store never exceeds MaxTransactions (the spec's "latest N").
+    [Fact]
+    public async Task Add_OverCap_EvictsOldest_StaysBounded()
+    {
+        var store = new InMemoryTransactionStore();
+        var baseTime = DateTimeOffset.UtcNow;
+
+        // Distinct timestamps so the "oldest" is deterministic.
+        for (var i = 0; i < InMemoryTransactionStore.MaxTransactions + 25; i++)
+        {
+            await store.AddAsync(
+                new Transaction(Guid.NewGuid(), i, "USD", TransactionStatus.Pending, baseTime.AddSeconds(i)),
+                CancellationToken.None);
+        }
+
+        var all = (await store.GetAllAsync(CancellationToken.None)).ToList();
+        Assert.Equal(InMemoryTransactionStore.MaxTransactions, all.Count);
+
+        // The 25 oldest (the first added) must be gone; count still reflects the
+        // newest entries.
+        var minTs = all.Min(t => t.Timestamp);
+        Assert.Equal(baseTime.AddSeconds(25), minTs);
+    }
+
+    // 8. GetLatestAsync returns only the N most recent, newest-first.
+    [Fact]
+    public async Task GetLatest_ReturnsNewestFirst_RespectsCount()
+    {
+        var store = new InMemoryTransactionStore();
+        var baseTime = DateTimeOffset.UtcNow;
+
+        for (var i = 0; i < 5; i++)
+        {
+            await store.AddAsync(
+                new Transaction(Guid.NewGuid(), i, "USD", TransactionStatus.Pending, baseTime.AddSeconds(i)),
+                CancellationToken.None);
+        }
+
+        var latest = (await store.GetLatestAsync(3, CancellationToken.None)).ToList();
+
+        Assert.Equal(3, latest.Count);
+        Assert.Equal(baseTime.AddSeconds(4), latest[0].Timestamp);   // newest first
+        Assert.Equal(baseTime.AddSeconds(3), latest[1].Timestamp);
+        Assert.Equal(baseTime.AddSeconds(2), latest[2].Timestamp);
+    }
 }

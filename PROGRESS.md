@@ -731,3 +731,66 @@ kubectl port-forward svc/rtmonitor-api 8080:8080
 
 ### ❗ STOP
 - **עצירה לצורך אישורך (שלב אחרון):** 3.5 הושלם. ללא אישורך — לא commit, לא המשך.
+
+---
+
+## משימה 4.0 — תיקוני FIX-PLAN (P0-4 + P1 + נקיונות) — בוצע
+
+**מקור:** FIX-PLAN.md (תוכנית לפני הגשה). רוב P0-1/P0-2/P0-3 (README/ADR/Docker/K8s) כבר
+הושלמו ב-3.5. רשומה זו מכסה את החלק שטרם בוצע: תיקון שלושת הבאגים ש-Docker חושף
+(P0-4) + נקיונות P1. **הערה:** FIX-PLAN.md שמור כ-untracked — לא כולל ב-repo (מסמך עבודה פנימי).
+
+### P0-4(א) — באג קריטי: "t:all" לא בוטל בכתיבה ← היסטוריה נתקעת
+- **הבאג:** `TransactionCache.SetCachedListAsync` כותב את הרשימה כולה ל-`t:all`. אחרי ש-`GetAllAsync` פעם ראשונה מאכלס אותו, עסקאות חדשות (`ProcessAsync`) מרעננות רק את `t:{id}` — **`t:all` נשאר stale** → לקוח חדש ב-/monitor רואה רשימה ישנה לנצח. בפיתוח ללא Redis שכבת-הקאש מנוטרלת (InMemory fallback), אז הבאג רדום; ב-Docker עם Redis אמיתי הוא מתעורר ושובר את הדשבורד.
+- **התיקון (TDD Red→Green):**
+  - בדיקה אדומה: `GetAll_AfterNewTransaction_ReflectsIt` — נכשלת (invalidation=0).
+  - הוספת `ITransactionCache.InvalidateListAsync` + מימוש ב-`TransactionCache` כ-`_inner.RemoveAsync("t:all")`.
+  - `TransactionService.ProcessAsync` קורא ל-`InvalidateListAsync` אחרי ה-write-through.
+- **למה invalidation במקום עדכון ישיר של `t:all`?** עדכון ישיר דורש לקרוא-משרת-אז-לכתוב (read-modify-write) — יקר, וסובל מ-race בכתיבה-מקבילה. invalidation זול ופשוט: מבטיח שה-`t:all` הבא יתשאל מחדש את ה-store וייבנה מחדש. זוהי הדרך ה"cache invalidation" הקלאסית.
+
+### P0-4(ב) — TTL ל-"t:all" (קו-הגנה שני)
+- `CacheOptions` חדש (`Cache:ListTtlSeconds=30`) ב-appsettings; מוזרק ל-`TransactionCache` דרך **`IOptions<CacheOptions>`** (לא hardcoded).
+- **למה TTL נוסף?** גם אם invalidation נחמץ (edge-case, בעיה בזמן שנדרשת ה-build מחדש), רשימה stale לא נשארת לנצח — היא מתפוקקת מ-`t:all` תוך 30 ש' וה-read הבא מתשאל מחדש. קריטי במיוחד כש-`t:all` צומח עם כל עסקה (מניעת אכלוס זיכרון).
+
+### P0-4(ג) — CORS (חסר לחלוטין קודם)
+- `AddCors` + `UseCors` ב-Program.cs; origins מ-config (`Cors:AllowedOrigins`, דיפולט `http://localhost:5173`).
+- **`AllowCredentials()` הוא חובה ל-SignalR** (WebSockets נושאים cookie/credentials), וכתוצאה **אסור `AllowAnyOrigin`** (לא תואם credentials) — לכן origins חייבים מרשימת-מפורש, מה-config. זו נקודת ריאיון: CORS בלי credentials לא עובד עם SignalR.
+
+### P1-1 — מחיקה של `TransactionHub.TransactionReceived` (client-invokable)
+- נמחקה: היא קוראת ל-`Clients.All.SendAsync("TransactionReceived", …)` — אך השידור האמיתי כבר עובר דרך `ITransactionBroadcaster` (SignalR outbound), ולא דרך מתודה נכנסת מה-client. מתודה נכנסת ב-Hub עם אותו שם כמו מתודה-יוצאת של השרת היא כפילות ו-clutter. הקוד קורא "Real ingestion flows through ingestion API"; ההיסרה הוכיחה שאין `connection.invoke` בקליינט (רק `.on`).
+
+### P1-2 — `GET /api/transactions` + `GET /api/transactions/{id}`
+- `ITransactionService.GetAllAsync`/`GetByIdAsync` כבר קיימים ונבדקים — פשוט לא חשופים. שהם ב-Location-header של ה-POST (שמתעקף ל-404 לפני). הוספתי את שני ה-endpoints + `.Produces<T>()` כדי ש-Swagger יציג סכמה, ו-`.ProducesValidationProblem()` ל-POST.
+- בדיקות: `Get_AfterPost_ListsTheTransaction`, `Post_LocationHeader_ResolvesToGetById`, `Get_UnknownId_Returns404`.
+
+### P1-4 — חסימת אחסון ל-200 אחרונות + `GetLatestAsync` + `OnConnectedAsync` שולח N last
+- המטלה: "Store **latest** transactions in Memory". `InMemoryTransactionStore` הוכן ל-cap **200** (`MaxTransactions`): על כל Add, אם חורגים — מוציאים את המוקדם ביותר (best-effort upper-bound). התלות: הדלים בכל add מוצאים min — scan של ≤200 הוא זניח.
+- **החלטה מקצועית (ריאיון):** cap הוא **best-effort, לא דאטא-לוקים**: בין בדיקת ה-count ל-remove יש race מקבילי, אבל רק עוקף את ה-peak זמנית ואז חוזר ל-≤200. לזהות עוקפת מבלי לסבך בכל כניסה — הבחירה הנכונה ל-MVP.
+- התווסף `GetLatestAsync(int)` ל-`ITransactionStore` + `ITransactionService`. `TransactionHub.OnConnectedAsync` שולח **רק את ה-latest window (200, newest-first)** במקום לשלוח את כל ההיסטוריה — חוסך Serialization/bandwidth ללקוח שמתחבר, ומציג את העדכני ביותר.
+- בדיקות: cap (evict oldest), GetLatestAsync ordering, **concurrency בשכבת ה-Service** (100 Parallel ProcessAsync) — דרישה כתובה שממולאה.
+
+### P1-3 — side-effects אחרי commit לא תלויים ב-RequestAborted
+- **הבעיה:** הקוד העביר את `ct` של הבקשה ל-`SetCachedAsync`/`BroadcastReceivedAsync`. אם השולח ביטל את ה-POST (network drop/ניווט), ה-cache-write וה-broadcast היו מתבטלים — עסקה נשמרה ב-store אבל לקוחות לא היו רואים אותה live.
+- **התיקון:** אחרי `_store.AddAsync(transaction, ct)` (נקודת ה-commit), כל ה-side-effects עוברים עם `CancellationToken.None`. **החלטה מודעת (לא "התעלמות מ-CT")** — רובה ב-PROGRESS ובהערת קוד: ה-ct של הבקשה מייצג את *עיבוד הבקשה הבודדת*; ברגע שהעסקה נשמרה בהתמדה, ביטולו לא צריך למנוע מלקוחות **אחרים** לראות אותה live ולא להשאיר קאש stale. זה ההבדל בין "בטל את הבקשה" ל"ודא-ש-side-effect יתבצע". כתיעוד מה-`AddAsync` (הבנת "מה בדיוק הטוקן מייצג") — נקודה שמפרידה בין Junior ל-Senior בריאיון.
+
+### נקיונות נוספים (FIX-PLAN P2-4)
+- `ValidateRequest`: תוקן הבאג של **key `""`** לכשאין MemberNames (נעשה `nameof(TransactionRequest)`), ודו של שגיאות לאותו שדה מאגדות בגן. `.Produces<T>` על כל endpoints.
+
+### אימות בפועל (הרצתי, לא רק כתבתי)
+```
+dotnet restore → ✓ all up-to-date
+dotnet build   → ✓ 0 Warning(s), 0 Error(s)
+dotnet test    → ✓ Passed: 51, Failed: 0 (עלה מ-44 ל-51: +7 בדיקות חדשות)
+cd client
+npm run build  → ✓ 0 errors (אזהרת chunk >500kB בלבד מסignalR)
+npm run lint   → ✓ oxlint — 0 בעיות
+```
+
+### Docker hands-on — ממתין (דורש Docker Desktop)
+- Docker לא פעיל (daemon off) → לא אוריץ `docker compose up`. קבצים (Dockerfile/compose/набора) כבר קיימים מ-3.5 ונבחנו קריאה+תחביר. **שמור לעשות בסביבה עם Docker Desktop.**
+
+### git
+- לא בוצע commit. שינויי 4.0 + PROGRESS.md ב-working tree ממתינים לאישורך.
+
+### ❗ STOP
+- **עצירה לצורך אישורך:** 4.0 הושלם, הכול ירוק (51/51 + build/lint).

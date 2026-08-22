@@ -31,6 +31,13 @@ public interface ITransactionService
     /// <summary>Returns all persisted transactions (cache-aside with store fallback).</summary>
     Task<Result<IReadOnlyList<Transaction>>> GetAllAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Returns the most recent <paramref name="count"/> transactions ordered by
+    /// timestamp descending — the bounded "latest window" served to a fresh
+    /// dashboard on connect (without draining the whole history).
+    /// </summary>
+    Task<Result<IReadOnlyList<Transaction>>> GetLatestAsync(int count, CancellationToken ct);
+
     /// <summary>Returns a single transaction by id, or <c>null</c> when missing.</summary>
     Task<Result<Transaction?>> GetByIdAsync(string transactionId, CancellationToken ct);
 }

@@ -17,6 +17,13 @@ public interface ITransactionStore
     /// <summary>Return all stored transactions.</summary>
     Task<IEnumerable<Transaction>> GetAllAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Return the most recent <paramref name="count"/> transactions ordered by
+    /// their <see cref="Transaction.Timestamp"/> descending — the "latest"
+    /// view a fresh dashboard needs, without pulling the whole history.
+    /// </summary>
+    Task<IEnumerable<Transaction>> GetLatestAsync(int count, CancellationToken ct);
+
     /// <summary>Return a single transaction by its id (guid-string), or null when missing.</summary>
     Task<Transaction?> GetByIdAsync(string transactionId, CancellationToken ct);
 }

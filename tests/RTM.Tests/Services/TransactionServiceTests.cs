@@ -53,6 +53,13 @@ public class TransactionServiceTests
             return Task.FromResult<IEnumerable<Transaction>>(_items.ToList());
         }
 
+        public Task<IEnumerable<Transaction>> GetLatestAsync(int count, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult<IEnumerable<Transaction>>(
+                _items.OrderByDescending(t => t.Timestamp).Take(count).ToList());
+        }
+
         public Task<Transaction?> GetByIdAsync(string transactionId, CancellationToken ct = default)
         {
             ct.ThrowIfCancellationRequested();
@@ -72,6 +79,7 @@ public class TransactionServiceTests
         public ValueTask SetCachedAsync(Transaction transaction, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask<IReadOnlyList<Transaction>?> GetCachedListAsync(CancellationToken ct = default) => ValueTask.FromResult<IReadOnlyList<Transaction>?>(null);
         public ValueTask SetCachedListAsync(IEnumerable<Transaction> transactions, CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask InvalidateListAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
     }
 
     /// <summary>
@@ -200,6 +208,26 @@ public class TransactionServiceTests
             () => service.ProcessAsync(ValidId, ValidAmount, ValidCurrency, ValidStatus, ValidTimestamp, cts.Token));
     }
 
+    /// <summary>Concurrency (P2-3): N concurrent ProcessAsync calls all persist
+    /// and all broadcast — the service is safe under parallel ingestion.</summary>
+    [Fact]
+    public async Task Process_ConcurrentCalls_AllPersisted_AllBroadcast()
+    {
+        const int calls = 100;
+        var store = new InMemoryTransactionStore();
+        var broadcaster = new FakeBroadcaster();
+        var service = new TransactionService(store, new UnavailableCache(), broadcaster, NullLogger<TransactionService>.Instance);
+
+        await Task.WhenAll(
+            Enumerable.Range(0, calls).Select(i =>
+                service.ProcessAsync(
+                    Guid.NewGuid(), i, "USD", TransactionStatus.Pending, DateTimeOffset.UtcNow, CancellationToken.None)));
+
+        var all = await store.GetAllAsync(CancellationToken.None);
+        Assert.Equal(calls, all.Count());
+        Assert.Equal(calls, broadcaster.Published.Count);
+    }
+
     /// <summary>Fake store that honours cancellation immediately.</summary>
     private sealed class CancellingStore : ITransactionStore
     {
@@ -210,6 +238,12 @@ public class TransactionServiceTests
         }
 
         public Task<IEnumerable<Transaction>> GetAllAsync(CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult<IEnumerable<Transaction>>(Array.Empty<Transaction>());
+        }
+
+        public Task<IEnumerable<Transaction>> GetLatestAsync(int count, CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
             return Task.FromResult<IEnumerable<Transaction>>(Array.Empty<Transaction>());

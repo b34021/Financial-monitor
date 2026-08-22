@@ -43,6 +43,10 @@ public class TransactionHubTests
         public Task<Result<IReadOnlyList<Transaction>>> GetAllAsync(CancellationToken ct)
             => Task.FromResult(Result<IReadOnlyList<Transaction>>.Success((IReadOnlyList<Transaction>)_history.ToList()));
 
+        public Task<Result<IReadOnlyList<Transaction>>> GetLatestAsync(int count, CancellationToken ct)
+            => Task.FromResult(Result<IReadOnlyList<Transaction>>.Success(
+                (IReadOnlyList<Transaction>)_history.OrderByDescending(t => t.Timestamp).Take(count).ToList()));
+
         public Task<Result<Transaction?>> GetByIdAsync(string transactionId, CancellationToken ct)
             => throw new InvalidOperationException("Hub must not invoke GetByIdAsync on connect.");
     }
@@ -89,11 +93,17 @@ public class TransactionHubTests
     }
 
     // 1. On connect, the caller receives "InitialTransactions" populated with the
-    //    existing history from the (cache-backed) service — not empty.
+    //    existing "latest window" from the service — newest first (the bounded
+    //    most-recent entries, not the whole history), never empty.
     [Fact]
     public async Task OnConnected_ExistingHistory_SendsInitialTransactionsToCaller()
     {
-        var hub = new TransactionHub(new FakeService(Tx(IdA), Tx(IdB)));
+        // Distinct timestamps make the "latest-first" order deterministic: IdB is
+        // newer than IdA, so the window hands them back newest-first.
+        var baseTime = DateTimeOffset.UtcNow;
+        var hub = new TransactionHub(new FakeService(
+            new Transaction(IdA, 10m, "USD", TransactionStatus.Pending, baseTime.AddMinutes(0)),
+            new Transaction(IdB, 20m, "USD", TransactionStatus.Pending, baseTime.AddMinutes(1))));
         var proxy = new RecordingProxy();
         hub.Clients = new FakeCallerClients(proxy);
 
@@ -102,7 +112,7 @@ public class TransactionHubTests
         Assert.Equal("InitialTransactions", proxy.Method);
         Assert.NotNull(proxy.Args);
         var list = Assert.IsAssignableFrom<IReadOnlyList<Transaction>>(proxy.Args[0]);
-        Assert.Equal(new[] { IdA, IdB }, list.Select(t => t.TransactionId));
+        Assert.Equal(new[] { IdB, IdA }, list.Select(t => t.TransactionId));
     }
 
     // 2. A client connecting with no persisted history still receives an empty

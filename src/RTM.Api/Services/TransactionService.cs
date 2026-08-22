@@ -61,16 +61,21 @@ public sealed class TransactionService : ITransactionService
         // Validated payload — constructor invariants are satisfied.
         var transaction = new Transaction(transactionId, amount, currency, status, timestamp);
 
-        // Source of truth: always persist to the store first.
+        // Source of truth: always persist to the store first. This step honours
+        // the caller's cancellation token — it IS the request being processed.
         await _store.AddAsync(transaction, ct);
 
-        // Write-through: best-effort refresh of the single-entry cache. The
-        // full-list cache is stale by design; it is repopulated lazily by reads.
-        await _cache.SetCachedAsync(transaction, ct).ConfigureAwait(false);
+        // Side-effects AFTER the commit point (single-entry cache refresh, list
+        // invalidation, live broadcast) are decoupled from the caller's token.
+        // Deliberate decision (documented in PROGRESS.md): once the transaction
+        // is safely persisted, the SENDER's request cancelling must not prevent
+        // OTHER connected clients from seeing it live, nor leave the cache stale.
+        // These are best-effort in the sense that a cache fault is swallowed —
+        // but they are NOT abandoned because the originating request disappeared.
+        await _cache.SetCachedAsync(transaction, CancellationToken.None).ConfigureAwait(false);
+        await _cache.InvalidateListAsync(CancellationToken.None).ConfigureAwait(false);
 
-        // Live push: best-effort (the transaction is already persisted), still
-        // honours the caller's cancellation token.
-        var clientCount = await _broadcaster.BroadcastReceivedAsync(transaction, ct).ConfigureAwait(false);
+        var clientCount = await _broadcaster.BroadcastReceivedAsync(transaction, CancellationToken.None).ConfigureAwait(false);
         _logger.LogInformation("Broadcasted transaction {TransactionId} to {ClientCount} client(s).", transaction.TransactionId, clientCount);
 
         return Result<Transaction>.Success(transaction);
@@ -94,6 +99,16 @@ public sealed class TransactionService : ITransactionService
         await _cache.SetCachedListAsync(snapshot, ct).ConfigureAwait(false);
 
         return Result<IReadOnlyList<Transaction>>.Success(snapshot);
+    }
+
+    public async Task<Result<IReadOnlyList<Transaction>>> GetLatestAsync(int count, CancellationToken ct)
+    {
+        // The "latest window" is served straight from the store (which is itself
+        // capped at 200) — no full-list cache round-trip, and the caller only
+        // pulls the N most recent rows. This is what the hub hands a fresh
+        // dashboard on connect.
+        var items = await _store.GetLatestAsync(count, ct).ConfigureAwait(false);
+        return Result<IReadOnlyList<Transaction>>.Success(new List<Transaction>(items));
     }
 
     public async Task<Result<Transaction?>> GetByIdAsync(string transactionId, CancellationToken ct)

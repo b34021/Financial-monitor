@@ -122,4 +122,55 @@ public class TransactionIngestionApiTests : IClassFixture<WebApplicationFactory<
         Assert.Contains("connectionId", doc.RootElement.EnumerateObject()
             .Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
     }
+
+    // f. GET /api/transactions lists a transaction that was just ingested.
+    //    (The store is a singleton across the fixture, so we assert membership
+    //    of the id we just posted, not a precise count.)
+    [Fact]
+    public async Task Get_AfterPost_ListsTheTransaction()
+    {
+        using var client = CreateClient();
+        var id = Guid.NewGuid();
+
+        await client.PostAsync("/api/transactions", Json(ValidPayload(id)));
+        var response = await client.GetAsync("/api/transactions");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var ids = doc.RootElement.EnumerateArray()
+            .Select(e => e.GetProperty("transactionId").GetString())
+            .ToArray();
+        Assert.Contains(id.ToString(), ids);
+    }
+
+    // g. The Location header the POST returns resolves to a live GET endpoint
+    //    (200), so a Swagger "follow the link" click works.
+    [Fact]
+    public async Task Post_LocationHeader_ResolvesToGetById()
+    {
+        using var client = CreateClient();
+        var id = Guid.NewGuid();
+
+        var post = await client.PostAsync("/api/transactions", Json(ValidPayload(id)));
+        var location = post.Headers.Location;
+        Assert.NotNull(location);
+
+        // Location is a relative URI (/api/transactions/{id}); use its string as
+        // the path for the follow-up GET.
+        var get = await client.GetAsync(location.ToString());
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        using var doc = JsonDocument.Parse(await get.Content.ReadAsStringAsync());
+        Assert.Equal(id.ToString(), doc.RootElement.GetProperty("transactionId").GetString());
+    }
+
+    // h. GET /api/transactions/{missing} → 404.
+    [Fact]
+    public async Task Get_UnknownId_Returns404()
+    {
+        using var client = CreateClient();
+
+        var response = await client.GetAsync($"/api/transactions/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
 }

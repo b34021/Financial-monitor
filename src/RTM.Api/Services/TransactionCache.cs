@@ -25,11 +25,13 @@ public sealed class TransactionCache : ITransactionCache
 
     private readonly ICacheProvider _inner;
     private readonly ILogger<TransactionCache> _logger;
+    private readonly TimeSpan? _listTtl;
 
-    public TransactionCache(ICacheProvider inner, ILogger<TransactionCache> logger)
+    public TransactionCache(ICacheProvider inner, ILogger<TransactionCache> logger, TimeSpan? listTtl = null)
     {
         _inner = inner;
         _logger = logger;
+        _listTtl = listTtl;
     }
 
     public ValueTask<bool> IsAvailableAsync(CancellationToken ct = default)
@@ -96,7 +98,19 @@ public sealed class TransactionCache : ITransactionCache
         if (!_inner.IsConnected)
             return;
 
-        await _inner.SetAsync(ListKey, SerializeList(transactions), ct: ct).ConfigureAwait(false);
+        // The full list gets a short TTL (configurable): even if a write-through
+        // invalidation is ever missed, a stale list self-expires and the next read
+        // re-queries the store. See Cache:ListTtlSeconds.
+        await _inner.SetAsync(ListKey, SerializeList(transactions), expiry: _listTtl, ct: ct).ConfigureAwait(false);
+    }
+
+    public async ValueTask InvalidateListAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!_inner.IsConnected)
+            return;
+
+        await _inner.RemoveAsync(ListKey, ct).ConfigureAwait(false);
     }
 
     private static string KeyFor(string id) => $"t:{id}";

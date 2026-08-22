@@ -22,6 +22,9 @@ namespace RTM.Api.Api;
 /// </summary>
 public sealed class TransactionHub : Hub
 {
+    /// <summary>Bounded "latest window" handed to a client on connect.</summary>
+    private const int LatestWindowSize = 200;
+
     private readonly ITransactionService _service;
 
     public TransactionHub(ITransactionService service)
@@ -40,13 +43,14 @@ public sealed class TransactionHub : Hub
     {
         Interlocked.Increment(ref _connectedClients);
 
-        // History handoff (cache-backed via the service): send the existing
-        // transactions to the just-connected client so it does not start empty.
+        // History handoff: hand the just-connected client the "latest window"
+        // (the bounded most-recent entries, via the service store) so it does
+        // not start empty — without draining or serialising the whole history.
         // Best-effort on the failure/cancel path — the connection itself must
         // not be torn down because a history read failed.
         try
         {
-            var history = await _service.GetAllAsync(CancellationToken.None).ConfigureAwait(false);
+            var history = await _service.GetLatestAsync(LatestWindowSize, CancellationToken.None).ConfigureAwait(false);
             if (history.IsSuccess)
                 await Clients.Caller.SendAsync("InitialTransactions", history.Value).ConfigureAwait(false);
         }
@@ -62,17 +66,6 @@ public sealed class TransactionHub : Hub
     {
         Interlocked.Decrement(ref _connectedClients);
         return base.OnDisconnectedAsync(exception);
-    }
-
-    /// <summary>
-    /// Client-invokable endpoint that a live client can post a transaction to,
-    /// which is then echoed to all connected clients. Real ingestion flows
-    /// through the ingestion API and the broadcaster; this exists as the hub's
-    /// client-facing surface for completeness.
-    /// </summary>
-    public async Task TransactionReceived(Transaction transaction)
-    {
-        await Clients.All.SendAsync("TransactionReceived", transaction).ConfigureAwait(false);
     }
 }
 

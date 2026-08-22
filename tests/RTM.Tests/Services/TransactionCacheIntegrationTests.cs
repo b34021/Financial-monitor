@@ -50,6 +50,13 @@ public class TransactionCacheIntegrationTests
             return Task.FromResult<IEnumerable<Transaction>>(_items.Values.ToList());
         }
 
+        public Task<IEnumerable<Transaction>> GetLatestAsync(int count, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult<IEnumerable<Transaction>>(
+                _items.Values.OrderByDescending(t => t.Timestamp).Take(count).ToList());
+        }
+
         public Task<Transaction?> GetByIdAsync(string id, CancellationToken ct = default)
         {
             ct.ThrowIfCancellationRequested();
@@ -71,6 +78,7 @@ public class TransactionCacheIntegrationTests
 
         public int SingleWrites { get; private set; }
         public int ListWrites { get; private set; }
+        public int ListInvalidations { get; private set; }
         public int SingleReads { get; private set; }
         public int ListReads { get; private set; }
 
@@ -100,6 +108,14 @@ public class TransactionCacheIntegrationTests
         {
             ListWrites++;
             _list = new List<Transaction>(txs);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask InvalidateListAsync(CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            ListInvalidations++;
+            _list = null;
             return ValueTask.CompletedTask;
         }
     }
@@ -179,5 +195,36 @@ public class TransactionCacheIntegrationTests
         Assert.Equal(1, _store.GetByIdCalls);         // only the first (miss) hit the store
         Assert.Equal(1, _cache.SingleWrites);         // populated exactly once after the miss
         Assert.Equal(2, _cache.SingleReads);           // both reads consulted the cache
+    }
+
+    /// <summary>
+    /// RED (P0-4a): a fresh GetAllAsync read must reflect a newly-written
+    /// transaction even after the full-list cache was already populated. In
+    /// production (Redis connected) the bug is: ProcessAsync refreshes only the
+    /// single-entry key, leaving "t:all" stale forever → a second dashboard
+    /// client never sees the new transaction until the list expires. The fix
+    /// invalidates the list on every write-through so the next read re-queries
+    /// the store.
+    /// </summary>
+    [Fact]
+    public void GetAll_AfterNewTransaction_ReflectsIt()
+    {
+        // 1. Ingest A → write-through refreshes the single key only.
+        Run(_service.ProcessAsync(IdA, 10m, "USD", TransactionStatus.Pending, DateTimeOffset.UtcNow, CancellationToken.None));
+
+        // 2. First GetAll → cache miss → repopulate "t:all" from the store.
+        var afterA = Run(_service.GetAllAsync(CancellationToken.None));
+        Assert.Single(afterA.Value!);
+        Assert.Equal(1, _cache.ListWrites);            // list is now cached
+
+        // 3. Ingest B after the list was already cached. Every write-through
+        //    must invalidate the stale list (one per ProcessAsync call).
+        Run(_service.ProcessAsync(IdB, 20m, "EUR", TransactionStatus.Completed, DateTimeOffset.UtcNow, CancellationToken.None));
+        Assert.Equal(2, _cache.ListInvalidations);      // one invalidation per write-through
+
+        // 4. Second GetAll must now reflect BOTH A and B (not serve stale "t:all").
+        var afterB = Run(_service.GetAllAsync(CancellationToken.None));
+        Assert.Equal(2, afterB.Value!.Count);
+        Assert.False(afterB.Value!.All(t => t.TransactionId == IdA));
     }
 }

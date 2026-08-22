@@ -38,4 +38,13 @@ public interface ITransactionCache
 
     /// <summary>Replaces the cached full list of transactions.</summary>
     ValueTask SetCachedListAsync(IEnumerable<Transaction> transactions, CancellationToken ct = default);
+
+    /// <summary>
+    /// Invalidates the cached full list ("t:all"). Must be called after a new
+    /// transaction is written (write-through) so the next
+    /// <see cref="GetCachedListAsync"/> misses and re-queries the store — a fresh
+    /// dashboard client never sees stale history. Best-effort: no-op when absent
+    /// or cache unavailable.
+    /// </summary>
+    ValueTask InvalidateListAsync(CancellationToken ct = default);
 }
