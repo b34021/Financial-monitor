@@ -1,4 +1,5 @@
 import type { Transaction } from '../types/transaction';
+import { normalizeStatus } from './status.ts';
 
 // ---------------------------------------------------------------------------
 // Pure aggregation helpers for the analytics dashboard.
@@ -40,13 +41,14 @@ export function aggregateKpis(transactions: readonly Transaction[]): KpiSnapshot
   const completedRevenue: Record<string, number> = {};
 
   for (const tx of transactions) {
-    if (tx.status === 'Completed') {
+    const s = normalizeStatus(tx.status);
+    if (s === 'completed') {
       completed++;
       // Sum per currency — no cross-currency conversion.
       completedRevenue[tx.currency] = (completedRevenue[tx.currency] ?? 0) + tx.amount;
-    } else if (tx.status === 'Pending') {
+    } else if (s === 'pending') {
       pending++;
-    } else if (tx.status === 'Failed') {
+    } else if (s === 'failed') {
       failed++;
     }
   }
@@ -78,9 +80,10 @@ export function aggregateStatusCounts(
   let failed = 0;
 
   for (const tx of transactions) {
-    if (tx.status === 'Completed') completed++;
-    else if (tx.status === 'Pending') pending++;
-    else if (tx.status === 'Failed') failed++;
+    const s = normalizeStatus(tx.status);
+    if (s === 'completed') completed++;
+    else if (s === 'pending') pending++;
+    else if (s === 'failed') failed++;
   }
 
   return { completed, pending, failed };
@@ -107,7 +110,7 @@ export function aggregateRevenueByPeriod(
   period: Period,
 ): PeriodBucket[] {
   // 1. Filter to completed only.
-  const completed = transactions.filter((tx) => tx.status === 'Completed');
+  const completed = transactions.filter((tx) => normalizeStatus(tx.status) === 'completed');
   if (completed.length === 0) return [];
 
   // 2. Bucket by period, tracking per-currency revenue.
@@ -194,9 +197,10 @@ export function aggregateCurrencyStatus(
       map.set(tx.currency, row);
     }
 
-    if (tx.status === 'Completed') row.completed += tx.amount;
-    else if (tx.status === 'Pending') row.pending += tx.amount;
-    else if (tx.status === 'Failed') row.failed += tx.amount;
+    const s = normalizeStatus(tx.status);
+    if (s === 'completed') row.completed += tx.amount;
+    else if (s === 'pending') row.pending += tx.amount;
+    else if (s === 'failed') row.failed += tx.amount;
   }
 
   return [...map.values()].sort((a, b) => a.currency.localeCompare(b.currency));

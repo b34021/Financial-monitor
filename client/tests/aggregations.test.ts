@@ -252,4 +252,28 @@ describe('aggregateCurrencyStatus', () => {
     assert.equal(result.length, 1);
     assert.equal(result[0].currency, 'USD');
   });
+
+  it('handles numeric-status payloads via normalizeStatus', () => {
+    // Simulate raw data from server that arrives as numeric enum (0/1/2).
+    const list = [
+      { transactionId: crypto.randomUUID(), amount: 100, currency: 'USD', status: 0 as unknown as Transaction['status'], timestamp: '2026-08-21T12:00:00+00:00' },
+      { transactionId: crypto.randomUUID(), amount: 200, currency: 'USD', status: 1 as unknown as Transaction['status'], timestamp: '2026-08-21T12:00:00+00:00' },
+      { transactionId: crypto.randomUUID(), amount: 50, currency: 'USD', status: 2 as unknown as Transaction['status'], timestamp: '2026-08-21T12:00:00+00:00' },
+    ];
+    // Does NOT crash, and correctly classifies.
+    const k = aggregateKpis(list as Transaction[]);
+    assert.equal(k.completed, 1, 'status=1 → completed');
+    assert.equal(k.failed, 1, 'status=2 → failed');
+    assert.equal(k.pending, 1, 'status=0 → pending');
+    assert.equal(k.completedRevenue['USD'], 200);
+    assert.equal(k.successRate, 50); // 1/(1+1)*100
+
+    const byStatus = aggregateStatusCounts(list as Transaction[]);
+    assert.deepEqual(byStatus, { completed: 1, pending: 1, failed: 1 });
+
+    const byCurrency = aggregateCurrencyStatus(list as Transaction[]);
+    assert.equal(byCurrency.length, 1);
+    assert.equal(byCurrency[0].completed, 200);
+    assert.equal(byCurrency[0].failed, 50);
+  });
 });
