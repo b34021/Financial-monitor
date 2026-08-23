@@ -881,3 +881,42 @@ node --test   → ✓ 7/7 pass
 
 ### git
 - לא בוצע commit. שינויים ב-working tree ממתינים לאישורך (build+lint+test ירוק).
+
+---
+
+## משימה 4.1.2 — תיקון קריסת ריצה: `transaction.status.toLowerCase is not a function`
+
+### האבחון
+- ה-crash נוצר בשורה הישנה ב-`TransactionCard`:
+  ```ts
+  const statusClass = `tx-card--${transaction.status.toLowerCase()}`;
+  ```
+  מודל ה-`Transaction` מגדיר `status` כ-string union, טיפוס-זמן-קומפילציה — אבל בשידור live (REST/SignalR) ערך יכול להגיע כ-**numeric index** (0/1/2), `undefined`, `null`, או אובייקט יוצא-דופן. TS "הבטיח" string אבל ה-runtime סיפק אחר — ערך non-string קורס את `.toLowerCase()`.
+
+### התיקון המקצועי (ללא שינוי Backend)
+- **מודול normalizer חדש** `client/src/services/status.ts` — טהור, ב-`services/` (AGENTS.md #3):
+  - `normalizeStatus(status: unknown) => DisplayStatus` — מתמודד עם *כל* טיפוס קלט:
+    - string → `trim().toLowerCase()`, מפה ל-`'pending'|'completed'|'failed'`; ערך לא-ידוע → `'unknown'`.
+    - number → מפה index `0/1/2` → `pending/completed/failed`; אחרת → `'unknown'`.
+    - `undefined`/`null`/object → `'unknown'` (אפור, safe).
+  - `STATUS_MAP` — מפה יציבה של label + badge-class + card-class לכל key.
+- **`StatusBadge`** — מקבל `status: unknown` ועובר `normalizeStatus`; כולל מצב `badge--unknown` אפור חדש (אין פיצוץ לעולם).
+- **`TransactionCard`** — שורת הקריסה הוחלפה ב-`normalizeStatus(transaction.status)` + `STATUS_MAP[key].card`; נוסף CSS `tx-card--unknown` (border אפור).
+- **`applyStatusFilter`** (liveData.ts) — עובר עכשיו דרך `normalizeStatus(tx.status) === 'failed'`, כך שעסקאות Failed מתגלות גם אם שלחו `'failed'`/`'Failed'`/numeric `2` — **תואם** את מה שמוצג (אדום) — בלי פערים בין הסינון לתצוגה.
+
+### בדיקות
+- נכתבו **5 בדיקות חדשות** ל-`normalizeStatus` (str→lowercase, case-insensitive+trim, numeric index mapping, fallback unknown, hostile-shapes no-crash) ובדיקת-filter מתוקנת (numeric `2` → נכלל ב-failed). **סך-הכול 12/12 עוברות.**
+
+### פתרון מקצועי ב-import (.ts extension)
+- `liveData.ts` מייבא `./status.ts` עם extension מפורש — כך שניתן להריץ אותו גם ב-**Node-runner** (requirets explicit extension) וגם ב-**Vite** (`tsconfig` עם `allowImportingTsExtensions: true`). זה פותר את ERR_MODULE_NOT_FOUND ב-node --test מבלי לשבור build.
+
+### אימות בפועל (הרצתי)
+```
+cd client
+npm run build → ✓ 0 errors (tsc -b + vite)
+npm run lint  → ✓ 0 בעיות
+node --test   → ✓ 12/12 pass
+```
+
+### git
+- לא בוצע commit. שינויים: קובץ חדש `services/status.ts`, שינוי `StatusBadge`/`TransactionCard`/`liveData`/`index.css`/`liveData.test.ts`/`PROGRESS.md` ב-working tree.

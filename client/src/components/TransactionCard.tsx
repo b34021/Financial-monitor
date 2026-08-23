@@ -1,4 +1,5 @@
 import type { Transaction } from '../types/transaction';
+import { STATUS_MAP, normalizeStatus } from '../services/status';
 import { StatusBadge } from './StatusBadge';
 
 /** Format a UTC ISO timestamp into a readable local date+time string. */
@@ -22,7 +23,10 @@ export function TransactionCard({
   fresh?: boolean;
   enterDelay?: number;
 }) {
-  const statusClass = `tx-card--${transaction.status.toLowerCase()}`;
+  // Normalize at render so a non-string status (numeric index, undefined,
+  // odd casing) falls back safely instead of crashing .toLowerCase().
+  const statusKey = normalizeStatus(transaction.status);
+  const statusClass = STATUS_MAP[statusKey].card;
   const className = fresh
     ? `tx-card ${statusClass} tx-card--fresh`
     : `tx-card ${statusClass}`;

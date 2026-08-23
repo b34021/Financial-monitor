@@ -1,4 +1,5 @@
 import type { Transaction } from '../types/transaction';
+import { normalizeStatus } from './status.ts';
 
 /**
  * Pure feed helpers — sort + filter live transaction data, with no I/O and no
@@ -18,9 +19,11 @@ export type FeedFilter = 'all' | 'failed';
 
 /**
  * Apply the status filter to a full feed. `'all'` passes everything through;
- * `'failed'` narrows to Failed transactions only.
+ * `'failed'` narrows to Failed transactions only. Matching is done through the
+ * runtime normalizer so a Failed transaction reaches the filter regardless of
+ * whether its inbound status was `'Failed'`, `'failed'`, or the numeric `2`.
  */
 export function applyStatusFilter(list: readonly Transaction[], filter: FeedFilter): Transaction[] {
   if (filter === 'all') return [...list];
-  return list.filter((tx) => tx.status === 'Failed');
+  return list.filter((tx) => normalizeStatus(tx.status) === 'failed');
 }

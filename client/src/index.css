@@ -202,6 +202,9 @@ body {
 .tx-card--failed {
   border-left-color: var(--bad);
 }
+.tx-card--unknown {
+  border-left-color: var(--muted);
+}
 .tx-card__top {
   display: flex;
   justify-content: space-between;
@@ -259,6 +262,10 @@ body {
 .badge--failed {
   background: color-mix(in srgb, var(--bad) 18%, transparent);
   color: var(--bad);
+}
+.badge--unknown {
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+  color: var(--muted);
 }
 
 /* ---- Error filter toggle (switch) ---- */
