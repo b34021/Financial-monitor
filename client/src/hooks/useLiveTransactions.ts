@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { TransactionHubClient } from '../services/signalR';
+import { applyStatusFilter, sortNewestFirst, type FeedFilter } from '../services/liveData';
 import type { Transaction } from '../types/transaction';
 
 /** Hard cap on the buffered list — keeps the feed light no matter the volume. */
@@ -8,21 +9,22 @@ const MAX_TRANSACTIONS = 200;
 export type ConnectionState = 'connecting' | 'connected' | 'failed';
 
 /**
- * useLiveTransactions — owns the live feed's state and SignalR connection.
+ * useLiveTransactions — owns the live feed's state and the SignalR connection.
  *
- * Responsibilities split away from the page:
- *   - connects to the hub on mount, disposes on unmount (cleanup via ref);
- *   - seeds the list from the cache-backed history (InitialTransactions);
- *   - prepends each incoming transaction, newest-first, capped at MAX;
- *   - sorts by timestamp (desc) so ordering survives out-of-order delivery;
- *   - exposes a "show only errors" filter that narrows the exposed list;
- *   - exposes the connection state for the status pill.
+ * State is deliberately split so the page never conflates what was received
+ * with what is shown:
+ *   - `fullList`   — every received transaction (all statuses, capped, newest-first).
+ *   - `filter`     — 'all' | 'failed' (which slice the dashboard shows).
+ *   - `visibleList`— derived from (fullList, filter); what feeds the UI.
+ *   - `totalCount` — ALWAYS the visible length, so the counter matches the
+ *                    rendered list even while the error filter is active.
  *
- * The page renders whatever this returns — it holds no network logic itself.
+ * Every new TransactionReceived lands in fullList regardless of the active
+ * filter; Failed ones additionally appear in the visible slice when filtered.
  */
 export function useLiveTransactions() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [showOnlyFailed, setShowOnlyFailed] = useState(false);
+  const [fullList, setFullList] = useState<Transaction[]>([]);
+  const [filter, setFilter] = useState<FeedFilter>('all');
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const clientRef = useRef<TransactionHubClient | null>(null);
 
@@ -32,13 +34,14 @@ export function useLiveTransactions() {
     const client = new TransactionHubClient({
       onInitialTransactions: (history) => {
         if (disposed) return;
-        setTransactions(sortNewestFirst(history).slice(0, MAX_TRANSACTIONS));
+        setFullList(sortNewestFirst(history).slice(0, MAX_TRANSACTIONS));
         setConnectionState('connected');
       },
       onTransactionReceived: (tx) => {
         if (disposed) return;
-        // Functional update — only the new head is added, the rest is intact.
-        setTransactions((prev) => sortNewestFirst([tx, ...prev]).slice(0, MAX_TRANSACTIONS));
+        // Functional update — prepend the new head, keep the rest intact,
+        // re-sort, and stay within the buffer cap.
+        setFullList((prev) => sortNewestFirst([tx, ...prev]).slice(0, MAX_TRANSACTIONS));
       },
     });
     clientRef.current = client;
@@ -54,24 +57,15 @@ export function useLiveTransactions() {
     };
   }, []);
 
-  const visible = showOnlyFailed
-    ? transactions.filter((tx) => tx.status === 'Failed')
-    : transactions;
-
-  const toggleFailedOnly = () => setShowOnlyFailed((prev) => !prev);
+  const visibleList = applyStatusFilter(fullList, filter);
+  const toggleFailedOnly = () => setFilter((prev) => (prev === 'failed' ? 'all' : 'failed'));
 
   return {
-    transactions: visible,
-    totalCount: transactions.length,
-    connectionState,
-    showOnlyFailed,
+    transactions: visibleList,
+    fullCount: fullList.length,
+    totalCount: visibleList.length,
+    filter,
     toggleFailedOnly,
+    connectionState,
   };
-}
-
-/** Sort newest-first by the timestamp (events may arrive out of order). */
-function sortNewestFirst(list: Transaction[]): Transaction[] {
-  return list
-    .slice()
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 }

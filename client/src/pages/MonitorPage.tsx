@@ -8,8 +8,9 @@ import { useLiveTransactions } from '../hooks/useLiveTransactions';
  * resulting list. No direct fetch, no try/catch, no local connection handling.
  */
 export function MonitorPage() {
-  const { transactions, totalCount, connectionState, showOnlyFailed, toggleFailedOnly } =
+  const { transactions, totalCount, connectionState, filter, toggleFailedOnly } =
     useLiveTransactions();
+  const errorsOnly = filter === 'failed';
 
   return (
     <section className="page">
@@ -17,12 +18,12 @@ export function MonitorPage() {
         <div>
           <h2>Live dashboard</h2>
           <p className="page__hint">
-            {totalCount} transaction{totalCount === 1 ? '' : 's'} received
-            {showOnlyFailed ? ' (errors only)' : ''}.
+            {totalCount} transaction{totalCount === 1 ? '' : 's'} visible
+            {errorsOnly ? ' (errors only)' : ''}.
           </p>
         </div>
         <div className="page__header-actions">
-          <ErrorFilterToggle checked={showOnlyFailed} onToggle={toggleFailedOnly} />
+          <ErrorFilterToggle checked={errorsOnly} onToggle={toggleFailedOnly} />
           <span className={`pill pill--${connectionState}`}>
             {connectionState === 'connecting' && 'Connecting…'}
             {connectionState === 'connected' && 'Connected (live)'}
@@ -33,14 +34,14 @@ export function MonitorPage() {
 
       {transactions.length === 0 ? (
         <p className="page__empty">
-          {showOnlyFailed
+          {errorsOnly
             ? 'No failed transactions to show.'
             : 'No transactions yet. Send one from the /add simulator.'}
         </p>
       ) : (
         <div className="tx-feed">
-          {transactions.map((tx) => (
-            <TransactionCard key={tx.transactionId} transaction={tx} />
+          {transactions.map((tx, index) => (
+            <TransactionCard key={tx.transactionId} transaction={tx} fresh={index === 0} />
           ))}
         </div>
       )}

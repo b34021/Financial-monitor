@@ -210,11 +210,24 @@ body {
 }
 
 .badge {
-  display: inline-block;
-  padding: 0.1rem 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.6rem;
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 700;
+  line-height: 1;
+  /* Smooth colour cross-fade should a card's status ever be updated live. */
+  transition:
+    background 0.35s ease,
+    color 0.35s ease;
+}
+.badge__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: currentColor;
 }
 .badge--pending {
   background: color-mix(in srgb, var(--warn) 18%, transparent);
@@ -252,19 +265,40 @@ body {
 
 /* ---- New-transaction animation ---- */
 /* Runs only when a card mounts (React adds a fresh node for each new tx), so
-   only the newest entry animates in — the existing list is not re-rendered. */
+   only the newest entries animate in — the existing list is not re-rendered. */
 @keyframes tx-enter {
   from {
     opacity: 0;
-    transform: translateY(-6px) scale(0.98);
+    transform: translateY(-8px) scale(0.97);
   }
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
 }
+/* A soft green "fresh" glow on the newest card draws the eye without a jarring
+   flash — applies once on mount only. */
+@keyframes tx-flash {
+  0% {
+    background: color-mix(in srgb, var(--ok) 22%, var(--surface));
+  }
+  100% {
+    background: var(--surface);
+  }
+}
 .tx-card {
-  animation: tx-enter 0.28s ease-out;
+  animation: tx-enter 0.3s ease-out;
+}
+.tx-card--fresh {
+  animation:
+    tx-flash 0.9s ease-out,
+    tx-enter 0.3s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tx-card,
+  .tx-card--fresh {
+    animation: none;
+  }
 }
 .page__header-actions {
   display: flex;

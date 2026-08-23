@@ -9,11 +9,18 @@ function formatTimestamp(iso: string): string {
 
 /**
  * Single row/tile of a transaction: id (short), amount + currency,
- * timestamp and a status badge. Used by the live monitor feed.
+ * timestamp and a status badge. Used by the live monitor feed. When `fresh`,
+ * the card gets a one-off "new item" glow on mount.
  */
-export function TransactionCard({ transaction }: { transaction: Transaction }) {
+export function TransactionCard({
+  transaction,
+  fresh = false,
+}: {
+  transaction: Transaction;
+  fresh?: boolean;
+}) {
   return (
-    <article className="tx-card">
+    <article className={fresh ? 'tx-card tx-card--fresh' : 'tx-card'}>
       <div className="tx-card__top">
         <span className="tx-card__id" title={transaction.transactionId}>
           {transaction.transactionId.slice(0, 8)}…

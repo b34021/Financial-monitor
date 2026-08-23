@@ -794,3 +794,48 @@ npm run lint   → ✓ oxlint — 0 בעיות
 
 ### ❗ STOP
 - **עצירה לצורך אישורך:** 4.0 הושלם, הכול ירוק (51/51 + build/lint).
+
+---
+
+## משימה 4.1 — תיקוני באגים ושיפור UI בדף /monitor (React בלבד, ללא Backend)
+
+### מה בוצע (React/components בלבד — לא שונה Backend)
+
+**באג 1 — סינון "Show only errors" + מונה.**
+- שיניתי מחדש את `useLiveTransactions` במ-deliberate split of state:
+  - `fullList` — כל העסקאות שהתקבלו (ללא קשר לפילטר; capped ל-200, newest-first).
+  - `filter` — enum `'all' | 'failed'` (במקום boolean `showOnlyFailed`).
+  - `visibleList` — נגזר מ-(fullList, filter) דרך `applyStatusFilter`.
+  - `totalCount` — **תמיד** `visibleList.length`, כך שהמונה תואם למה שמוצג גם כשהפילטר פעיל.
+- כל `TransactionReceived` חדש נכנס ל-`fullList` תמיד; Failed נוסף נכנס ל-visible slice כשהפילטר פעיל (באמצעות ה-functional setState — לא ביטלתי את ה-live)
+- **החלטה:** הוצאתי את לוגיקת ה-sort/filter לפונקציות טהורות ל-`services/liveData.ts` (`sortNewestFirst`, `applyStatusFilter`, `FeedFilter`). זה עומד ב-AGENTS.md (חוק 3 — services/), משאיר את ה-hook דק, ומאפשר unit-test ללא React/no-IRM — בלי I/O.
+
+**באג 2 — עיצוב סטטוס (StatusBadge).**
+- `StatusBadge` — שדרוג: badge צבעוני (pill) עם **dot** מובלט בצבע הסטטוס + טקסט קריא (`Pending`/`Completed`/`Failed`), `aria-label`, פלטה מובנת `Record<T, class>`, ו-`transition` רך על רקע/צבע (למקרה שמעמד יעודכן live בעתיד).
+- משמש בכל מקום הקיים (TransactionCard) — לא שברתי שום צרכן.
+
+**א. אנימציית כניסת עסקה חדשה.**
+- `@keyframes tx-enter` שופר (slide + scale עם ריחוף גדול יותר); מוסיף `tx-flash` — זוהר ירוק עדין רך על הכרטיס **החדש ביותר** (`tx-card--fresh` על `index === 0`) שנמחק-אחר-שניה. `prefers-reduced-motion` מכובה לכולם (נגישות).
+- **לגבי מעברי סטטוס (3ב):** במודל ה-data של RTM כל עסקה היא `transactionId` ייחודי ו-`status` נקבע פעם אחת בעת ההזנה (אין מנגנון עדכון status של עסקה קיימת ב-SignalR). לכן עסקה "משנה סטטוס" אינה מתרחשת בנתונים הנוכחיים. כיבדתי את הכוונה ב-`transition` הרך על badge (ה-sof צבע-cross-fade אם בתגובה יעודכן). כלומר: אין מקרה aktuali לـ status-transition, ואין דריסה. (מסמך במפורש כדי שלא ייחשב כהחמצה.)
+- **גרפים** — לא רלוונטי (שדרוג הmonitor עם Recharts בוטל על ידך).
+
+### בדיקות (native Node — ללא תשתית נוספת)
+- נוצרו פונקציות טהורות → כתבתי `client/tests/liveData.test.ts` עם Node test runner (`node --test`) — **6 בדיקות, 6 pass / 0 fail**: sort order, non-mutation, filter 'all', filter 'failed', fresh array, exhaustive union.
+- tsconfig.app.json כולל רק `src` → `tests/` NOT חלק מ-build, לא מפריע ל-`tsc -b`.
+
+### אימות בפועל (הרצתי)
+```
+cd client
+npm run build → ✓ 0 errors (tsc -b + vite; אזהרת chunk >500kB מסignalR בלבד — לא קשור)
+npm run lint  → ✓ oxlint — 0 בעיות
+node --test   → ✓ 6/6 pass
+```
+
+### החלטות מקצועיות (ראיון)
+1. **state split (fullList/filter/visibleList)** — הפרדה בין "מה-הגיע" ל"מה-מוצג". המונה תמיד נגזר מה-visible, כך שאין אי-התאמות.
+2. **filter כ-enum בא-`'all'|'failed'`** במקום boolean — ה-extensible future (`'pending'`, `'completed'`), ועדיף בעצם על `false/true`.
+3. **לוגיקה טהורה ב-services/**: testability בלי React/no I/O; ה-hook לReact אירועים בלבד.
+4. **אין status-transition** — תוצאה של מודל ה-data (GUID-invariant status). ה-`transition` על badge מ-upholds את הכוונה העתידית.
+
+### git
+- לא בוצע commit/שינוי. שינויים ב-working tree ממתינים לאישורך (build+lint+test ירוק).

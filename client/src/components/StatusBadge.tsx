@@ -1,17 +1,22 @@
 import type { TransactionStatus } from '../types/transaction';
 
 /**
- * Renders a transaction's lifecycle status as a small, color-coded badge.
- * Pending = amber (in flight), Completed = green, Failed = red.
+ * Renders a transaction's lifecycle status as a color-coded pill (badge).
+ * Pending = amber (in flight), Completed = green, Failed = red. A small dot
+ * echoes the status colour for quick scanning; the text label is the readable
+ * status name.
  */
-export function StatusBadge({ status }: { status: TransactionStatus }) {
-  const label = status;
-  const className =
-    status === 'Pending'
-      ? 'badge badge--pending'
-      : status === 'Completed'
-        ? 'badge badge--completed'
-        : 'badge badge--failed';
+const STATUS_PALETTE: Record<TransactionStatus, string> = {
+  Pending: 'badge--pending',
+  Completed: 'badge--completed',
+  Failed: 'badge--failed',
+};
 
-  return <span className={className}>{label}</span>;
+export function StatusBadge({ status }: { status: TransactionStatus }) {
+  return (
+    <span className={`badge ${STATUS_PALETTE[status]}`} aria-label={`Status: ${status}`}>
+      <span className="badge__dot" aria-hidden="true" />
+      {status}
+    </span>
+  );
 }
