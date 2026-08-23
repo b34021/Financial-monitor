@@ -41,6 +41,21 @@ MVP של "Real-Time Financial Monitor": API קולט עסקאות, מעבד או
    ```
 3. פועל: `/add` לשליחת עסקאות · `/monitor` ללוח חי + toggle "Show only errors".
 
+## Testing
+
+Run the automated checks for both parts of the stack:
+
+```
+# Backend — unit + integration tests (xUnit, see tests/RTM.Tests)
+dotnet test
+
+# Frontend — type-check + lint
+cd client && npm run lint
+
+# Frontend — production build
+cd client && npm run build
+```
+
 ## Docker (docker-compose)
 
 דרישה: Docker Desktop במקום. מהשורש:
@@ -58,8 +73,7 @@ docker build -f src/RTM.Api/Dockerfile -t rtmonitor-api .
 
 ## Kubernetes
 
-Manifests בתיקיית [`k8s/`](k8s/): `deployment.yaml` (3 replicas + Service),
-`redis.yaml` (Redis בפנים-קלאסטר). הרצה:
+Manifests בתיקיית [`k8s/`](k8s/): [`deployment.yaml`](k8s/deployment.yaml) (3 replicas + Service — ה-Service מוכל באותו קובץ), [`redis.yaml`](k8s/redis.yaml) (Redis בפנים-קלאסטר). הרצה:
 ```
 kubectl apply -f k8s/redis.yaml
 kubectl apply -f k8s/deployment.yaml

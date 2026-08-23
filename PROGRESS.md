@@ -956,3 +956,31 @@ node --test   → ✓ 12/12 pass
 
 ### git
 - לא בוצע commit. שינויים (working tree): `src/RTM.Api/RTM.Api.csproj` (new package), `appsettings.json`, `Program.cs`, `docs/ADR-003-...md`, `README.md`, `PROGRESS.md` — ממתינים לאישורך.
+
+---
+
+## אודיט C (שלב 3 מ-4) — Cloud/Deployment + תיעוד — ✅ דו"ח; החלת 2 תיקוני README (תיעוד בלבד)
+
+### א) סקירת אודיט C — מסקנה
+- **Dockerfile**: multi-stage (SDK→aspnet), runtime קטן (`aspnet:8.0`), ללא build artifacts, `ENV ASPNETCORE_URLS=:8080` + `EXPOSE 8080` + `ENTRYPOINT`, config דרך env — ✅ תקין.
+- **docker-compose.yml**: backend+redis, `depends_on: service_healthy`, healthcheck `redis-cli ping`, env `Redis__Configuration=redis:6379`, אין secrets — ✅ תקין.
+- **Kubernetes**: replicas 3, readiness+liveness על `/health`, resources, env Redis נכון, labels/selectors עקביים, redis-deployment+service קיימים, SPOF (Redis single-pod) מתועד ב-ADR-003 — ✅ תקין.
+  - הערת מבנה: **אין קובץ `service.yaml` נפרד** — ה-Service מוכל בתוך `k8s/deployment.yaml` (לתקין).
+- **README.md**: מדויק וקריא; הבדל in-memory/Rredis/durable מובהר; **חסרה Testing section** (P2).
+- **docs/ADR**: ADR-003 במצב "Implemented" (מונחה ע"י דגל `SignalR:UseRedisBackplane`), עקבי עם `Program.cs`; כל ADR קצר/קריא — ✅ תקין.
+- **סה"כ: 5/5 תקין**, אין P1; 2 המלצות P2 תיעודיות בלבד.
+
+### ב) 2 תיקוני README שבוצעו (תיעוד בלבד — ללא שינוי קוד)
+1. **הוספת חטיבת `## Testing`** אחרי How-to-run (Quick Start) — באנגלית:
+   - `dotnet test` (backend), `cd client && npm run lint` (type-check + lint), `cd client && npm run build` (production build).
+2. **ניסוח הפנייה ל-K8s**: "[`deployment.yaml`](k8s/deployment.yaml) (3 replicas + Service — ה-Service מוכל באותו קובץ), [`redis.yaml`](k8s/redis.yaml)" — הוסר הציון המוטעה ל-`service.yaml` נפרד.
+
+### קבצים ששונו
+- ✏️ `README.md` — נוסף `## Testing`; תוקנה הפנייה לקובצי K8s.
+- ✏️ `PROGRESS.md` — רשומה זו.
+
+### אימות (תיעוד בלבד — אין קוד לשנות; לא הורצו build/test כיוון שאין שינוי קוד)
+- שינויי README/PROGRESS בלבד → לא דורשים `dotnet build/test` / `npm build` (תיעוד Markdown בלבד).
+
+### git
+- **לא בוצע commit** — השינויים (README.md + PROGRESS.md) ב-working tree ממתינים לאישורך (כולל השינויים הקודמים של Backplane ממשימה קודמת).
