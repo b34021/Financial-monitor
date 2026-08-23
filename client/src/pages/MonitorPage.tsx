@@ -2,6 +2,11 @@ import { ErrorFilterToggle } from '../components/ErrorFilterToggle';
 import { TransactionCard } from '../components/TransactionCard';
 import { useLiveTransactions } from '../hooks/useLiveTransactions';
 
+/** Entrance stagger: only the first few cards cascade, so a burst of >STAGGER_GAP
+ *  cards still animates in smoothly without stalling the whole 200-item feed. */
+const STAGGER_GAP = 8;
+const STAGGER_STEP = 40;
+
 /**
  * /monitor — live dashboard. Dehydrated of all network/state logic: it calls
  * useLiveTransactions (SignalR connect/history/live/cap/filter) and renders the
@@ -23,7 +28,7 @@ export function MonitorPage() {
           </p>
         </div>
         <div className="page__header-actions">
-          <ErrorFilterToggle checked={errorsOnly} onToggle={toggleFailedOnly} />
+          <ErrorFilterToggle filtered={errorsOnly} onToggle={toggleFailedOnly} />
           <span className={`pill pill--${connectionState}`}>
             {connectionState === 'connecting' && 'Connecting…'}
             {connectionState === 'connected' && 'Connected (live)'}
@@ -41,7 +46,12 @@ export function MonitorPage() {
       ) : (
         <div className="tx-feed">
           {transactions.map((tx, index) => (
-            <TransactionCard key={tx.transactionId} transaction={tx} fresh={index === 0} />
+            <TransactionCard
+              key={tx.transactionId}
+              transaction={tx}
+              fresh={index === 0}
+              enterDelay={index < STAGGER_GAP ? index * STAGGER_STEP : 0}
+            />
           ))}
         </div>
       )}

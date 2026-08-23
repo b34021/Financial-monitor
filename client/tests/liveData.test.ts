@@ -70,4 +70,14 @@ describe('applyStatusFilter', () => {
       assert.ok(Array.isArray(applyStatusFilter(all, f)));
     }
   });
+
+  // Guard against a classic regression: the filter must only match the exact
+  // string 'Failed' that JsonStringEnumConverter emits over the wire — never a
+  // numeric enum index (Pending=0, Completed=1, Failed=2). If a broken client
+  // delivered `status: 2`, no filter output should treat it as Failed.
+  it("'failed' requires the exact string 'Failed' — a numeric index '2' is NOT a match", () => {
+    const numericStatus = { ...tx({ status: 'Failed' }), status: 2 as unknown } as unknown as Transaction;
+    const out = applyStatusFilter([numericStatus], 'failed');
+    assert.equal(out.length, 0);
+  });
 });

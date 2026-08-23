@@ -175,13 +175,32 @@ body {
 .tx-feed {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 0.75rem;
+  gap: 0.9rem;
 }
 .tx-card {
   background: var(--surface);
   border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
   border-radius: 12px;
   padding: 0.9rem 1rem;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.tx-card:hover {
+  transform: scale(1.015);
+  box-shadow: 0 6px 16px rgba(16, 24, 40, 0.12);
+}
+/* Status-coloured accent on the left edge — instant visual signal. */
+.tx-card--pending {
+  border-left-color: var(--warn);
+}
+.tx-card--completed {
+  border-left-color: var(--ok);
+}
+.tx-card--failed {
+  border-left-color: var(--bad);
 }
 .tx-card__top {
   display: flex;
@@ -242,25 +261,54 @@ body {
   color: var(--bad);
 }
 
-/* ---- Error filter toggle ---- */
+/* ---- Error filter toggle (switch) ---- */
 .filter {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.6rem;
   font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--muted);
+  font-weight: 600;
+  color: var(--text);
   cursor: pointer;
   user-select: none;
-  padding: 0.25rem 0.5rem;
-  border-radius: 8px;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  transition: background 0.15s ease;
 }
 .filter:hover {
-  background: var(--bg);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
 }
-.filter input {
-  accent-color: var(--accent);
-  cursor: pointer;
+.filter__checkbox {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.filter__switch {
+  width: 2rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  background: var(--border);
+  position: relative;
+  transition: background 0.2s ease;
+}
+.filter__knob {
+  position: absolute;
+  top: 0.11rem;
+  left: 0.11rem;
+  width: 0.93rem;
+  height: 0.93rem;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.3);
+  transition: transform 0.2s ease;
+}
+.filter__checkbox:checked + .filter__switch {
+  background: var(--bad);
+}
+.filter__checkbox:checked + .filter__switch .filter__knob {
+  transform: translateX(0.85rem);
 }
 
 /* ---- New-transaction animation ---- */
@@ -294,10 +342,16 @@ body {
     tx-flash 0.9s ease-out,
     tx-enter 0.3s ease-out;
 }
+/* Honour reduced-motion: disable entrance/glow animations AND the hover
+   scale/transition so nothing moves for vestibular-sensitive users. */
 @media (prefers-reduced-motion: reduce) {
   .tx-card,
   .tx-card--fresh {
     animation: none;
+  }
+  .tx-card {
+    transform: none !important;
+    transition: none !important;
   }
 }
 .page__header-actions {

@@ -839,3 +839,45 @@ node --test   → ✓ 6/6 pass
 
 ### git
 - לא בוצע commit/שינוי. שינויים ב-working tree ממתינים לאישורך (build+lint+test ירוק).
+
+---
+
+## משימה 4.1.1 — שיפור UI /monitor לפי דיווח חוזר (React בלבד)
+
+### אבחון הבאגים שדווחו
+**באג 1 (סטטוס "ללא שידRG") + באג 2 (Failed לא מופיע בסינון) —** בדקתי את המקור בפועל:
+- השרת שולח `status` כ-**string** (`JsonStringEnumConverter` ב-Program.cs:21) — לא כ-index/number.
+- הקליינט משווה ל-**ערך מדויק** `t.status === 'Failed'` ב-`applyStatusFilter` (liveData.ts) — לא index.
+- הסימולטור (`AddPage`) שולח `Pending/Completed/Failed` כ-string דרך select/zod.
+- **אין** באף מקום בפרויקט ערך "status: 2" / number ב-Transaction.
+- `StatusBadge` מציג טקסט מלא (`Failed`/`Pending`/`Completed`) + dot + צבע. כל מופעי הסטטוס עוברים דרכו (בדקתי ב-grep — היה המחשק היחיד).
+
+**מסקנה:** הקוד כבר תקין. סביר שהצפייה התבצעה מול build/שירות **ישן** (לפני commit 4.1). הוסף בדיקת-regression מפורשת (למטה) שמונעת חזרת "index-vs-string".
+
+### שיפורי UI שבוצעו כעת
+**נק' 3 — חזרה ל-all:** `ErrorFilterToggle` שודרג ל-**switch דו-מצבי** ברור: במצב `all` מציג "Show only errors"; ברגע שהמסנן פעיל → הטקסט הופך ל-**"Show all"** (לחיצה אחת חוזרת לרשימה המלאה). switch ויזואלי (knob + track) במקום checkbox שטוח.
+**נק' 4 — עיצוב כרטיסים:** `TransactionCard` קיבל:
+- **left-border** צבעוני לפי status (Pending=כתום / Completed=ירוק / Failed=אדום) — סימן ויזואלי מיידי.
+- צל עדין (`box-shadow`), hover עם `scale(1.015)` + צל מעודן.
+- רווח בין כרטיסים הוגדל (`gap: 0.9rem`).
+- יורד כה-id מקוצר (8 chars + …), amount בולט, currency, timestamp — נשמר.
+**נק' 5 — אנימציות:**
+- `tx-enter` (slide+fade) כבר קיים — ה-hover transform נוסף (אינו אנימציית rerender, formanently על CSS).
+- `tx-flash` (זוהר ירוק עדין) על הכרטיס החדש ביותר — נשמר.
+- **stagger** עדין: הכרטיסים הראשונים (`STAGGER_GAP=8`) מקבלים `animationDelay` מדורג (`STAGGER_STEP=40ms`) — כך שקבוצה שעלתה בבת-אחת מתגלגלת בהדרגה **מבלי להכבד על 200 עסקאות** (רק 8 הראשונים מקבלים delay).
+- `prefers-reduced-motion` מכבה **הכול**: אנימציות + hover transform + transition.
+
+### בדיקות
+- הוספתי בדיקת-גולם (7/7 עוברות): `'failed'` אינו מתאים `status`-index נומרי (כגון `2`) — רק ה-string `'Failed'` המדויק מחזיר תוצאה. (מניעת regress של התרחיש שחשש עליו.)
+
+### אימות בפועל (הרצתי)
+```
+cd client
+npm run build → ✓ 0 errors (tsc -b + vite)
+npm run lint  → ✓ 0 בעיות
+node --test   → ✓ 7/7 pass
+```
+כל רכיב/דף < 150 שורות (Monitor 60, Card 44, Toggle 29, Hook 71, Badge 22).
+
+### git
+- לא בוצע commit. שינויים ב-working tree ממתינים לאישורך (build+lint+test ירוק).

@@ -10,17 +10,25 @@ function formatTimestamp(iso: string): string {
 /**
  * Single row/tile of a transaction: id (short), amount + currency,
  * timestamp and a status badge. Used by the live monitor feed. When `fresh`,
- * the card gets a one-off "new item" glow on mount.
+ * the card gets a one-off "new item" glow on mount; `enterDelay` staggers the
+ * entrance animation so a burst of new cards cascades in gracefully.
  */
 export function TransactionCard({
   transaction,
   fresh = false,
+  enterDelay = 0,
 }: {
   transaction: Transaction;
   fresh?: boolean;
+  enterDelay?: number;
 }) {
+  const statusClass = `tx-card--${transaction.status.toLowerCase()}`;
+  const className = fresh
+    ? `tx-card ${statusClass} tx-card--fresh`
+    : `tx-card ${statusClass}`;
+
   return (
-    <article className={fresh ? 'tx-card tx-card--fresh' : 'tx-card'}>
+    <article className={className} style={enterDelay ? { animationDelay: `${enterDelay}ms` } : undefined}>
       <div className="tx-card__top">
         <span className="tx-card__id" title={transaction.transactionId}>
           {transaction.transactionId.slice(0, 8)}…
