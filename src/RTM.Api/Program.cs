@@ -21,7 +21,21 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 // SignalR: real-time push to live dashboards (the /monitor client).
-builder.Services.AddSignalR();
+// Optional Redis backplane (ADR-003): when SignalR:UseRedisBackplane=true all
+// replicas share one pub/sub channel, so Clients.All reaches pods on the same
+// Redis. Default (false) keeps the single-instance in-process hub unchanged.
+var useRedisBackplane = builder.Configuration.GetValue<bool>("SignalR:UseRedisBackplane");
+var signalrBuilder = builder.Services.AddSignalR();
+if (useRedisBackplane)
+{
+    signalrBuilder.AddStackExchangeRedis(options =>
+    {
+        var redisConnection = builder.Configuration["SignalR:Redis"] ?? "redis:6379";
+        // Parse the "host:port" string into StackExchange ConfigurationOptions
+        // (options.Configuration is typed ConfigurationOptions, not a string).
+        options.Configuration = StackExchange.Redis.ConfigurationOptions.Parse(redisConnection);
+    });
+}
 
 // CORS: allow the browser client from the configured origins. AllowCredentials()
 // is REQUIRED for SignalR (WebSockets carry cookies/auth), and it forbids

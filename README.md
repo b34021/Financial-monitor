@@ -66,8 +66,12 @@ kubectl apply -f k8s/deployment.yaml
 kubectl get pods -w        # 3/3 Ready כשהפרובבס עוברים
 kubectl port-forward svc/rtmonitor-api 8080:8080
 ```
-Probes (`/health`) → liveness + readiness. כרגע (single-process) כל replica מפעיל
-hub מקומי; לסנכרון תגובה בין מופעים — ראה **ADR-003** (SignalR Redis Backplane).
+Probes (`/health`) → liveness + readiness. כל replica מפעיל hub מקומי; לסנכרון
+תגובה בין מופעים — **ADR-003** (SignalR Redis Backplane).
+
+**Redis backplane is now implemented and enabled via `SignalR:UseRedisBackplane=true`.**
+The demo default (`false`) remains single-instance for simplicity. For multi-replica
+deployments, set the flag to `true` (and provide a Redis endpoint via `SignalR:Redis`).
 
 ## תיעוד החלטות
 

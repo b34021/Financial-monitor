@@ -920,3 +920,39 @@ node --test   → ✓ 12/12 pass
 
 ### git
 - לא בוצע commit. שינויים: קובץ חדש `services/status.ts`, שינוי `StatusBadge`/`TransactionCard`/`liveData`/`index.css`/`liveData.test.ts`/`PROGRESS.md` ב-working tree.
+
+---
+
+## משימה — SignalR Redis Backplane (conditional, ADR-003 Implemented)
+
+### מה נוסף
+- **חבילה:** `Microsoft.AspNetCore.SignalR.StackExchangeRedis` **8.0.11** (תואמת net8.0; הגרסה default 10.0.11 נדחתה ע"י NU1202).
+- **Configuration (לא hardcoded):** בסעיף `SignalR` ב-`appsettings.json`:
+  - `UseRedisBackplane: false` (ברירת מחדל = single-instance, לא פוגע בדמו)
+  - `Redis: "redis:6379"` (host:port; רשום ב-env או בקבצי קלאסטר).
+- **רישום מותנה ב-Program.cs:** `AddSignalR()` פעם אחת; אם `SignalR:UseRedisBackplane==true` → `.AddStackExchangeRedis(...)` על אותו builder. עם `false` (default) — נשאר in-process עם אותו hub — **החד-מופעי לא נשבר**.
+  - תיקון-דרך (כשהמינימום נדרש): `options.Configuration` הוא `ConfigurationOptions` (לא string) → `StackExchange.Redis.ConfigurationOptions.Parse(conn)` + fallback `?? "redis:6379"` (עקב `TreatWarningsAsErrors` על nullable).
+- **docs/ADR-003-signalr-redis-backplane.md:** מצב שונה מ-"Proposed" → **"Implemented"** — תיעוד הדגל המותנה, ההשפעה על `TransactionHub`/`Broadcaster` (ללא שינוי בהם, ללא double-broadcast), והמגבלה (חד-מופעי default).
+- **README.md:** סעיף Known Limitations (בקובץ k8s deployment) — נוסח אנגלי חדש: backplane מיושם ומופעל דרך `SignalR:UseRedisBackplane=true`; default נשאר single-instance; לפריסה מרובת-מופעים — flag+Redis.
+- **הסכם באגר:** כריפוד של שרת RTM.Api ישן (PID 2600) נועל את ה-exe; הופסק (taskkill) וחוזר build.
+
+### החלטות
+- **`options.Configuration`**: מנורמל ל-`ConfigurationOptions.Parse(string)` — ה-overload הנכון לחבילה 8.x.
+- **Backplane = Integration test מחוץ ליחידה:** בדיקת `UseRedisBackplane=true` דורשת Redis אמיתי + 2 מופעים (סנכרון בין-מופעי); לא ריאלי/זול ב-unit test. ה-`TransactionHubTests` (unit) בונים hub ישירות עם FakeService — לא נוגעים ב-Redis/DI, ורק `false` (in-process) הוא טווח ברירת-המחדל. בסיס: ה-`TransactionIngestionApiTests` (WebApplicationFactory) כבר מאמת את ה-Program עם default.
+- **פשרה חיובית/שלילית שבוצעה בפועל (ללא שינוי קוד):**
+  - `UseRedisBackplane=true` + `Redis=localhost:6379` (קונטיינר `redis:7-alpine`) → האפליקציה עלתה נקייה, בלי שגיאת חיבור.
+  - `UseRedisBackplane=true` + `Redis=localhost:6399` (נמל שגוי) → `RedisHubLifetimeManager` תיעד `Error connecting to Redis` — **הוכחה שהקוד-path פעיל** (לא silent no-op) וגם שה-app לא קרס (נסיון-חוזר אופייני, Consistent עם ה-best-effort של ה-cache).
+  - עם `false` → אין תלות ב-Redis כלל, פעולת in-process (אומת בבדיקות).
+  - קונטיינר test הוסר בתום האימות (`docker rm -f rtm-redis`).
+
+### תוצאות אימות (הרצתי בפועל, dotnet SDK 8.0.424)
+- `dotnet restore` → OK
+- `dotnet build` → **0 Warning, 0 Error**
+- `dotnet test` → **Passed: 51, Failed: 0** (כולל TransactionHubTests + TransactionIngestionApiTests)
+- אימות חי ב-backplane=true + Redis אמיתי → התחלה נקייה (בפריסה מקומית; אימות 2-pod/ערוץ משותף מיועד לסביבת K8s).
+
+### מגבלת אימות
+- העברת הוכחה רב-מופעית (2 pods על אותו Redis ⇒ לקוח-ל-Pod-B מקבל אירוע של Pod-A) לא בוצעה — דורשת מהלך K8s/Docker מרובה-מופעים. מתועד כ-Integration מחוץ ליחידה.
+
+### git
+- לא בוצע commit. שינויים (working tree): `src/RTM.Api/RTM.Api.csproj` (new package), `appsettings.json`, `Program.cs`, `docs/ADR-003-...md`, `README.md`, `PROGRESS.md` — ממתינים לאישורך.

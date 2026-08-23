@@ -1,7 +1,7 @@
 # ADR-003 — סנכרון SignalR בין מופעים (Redis Backplane) לקראת Node × N
 
-- **מצב:** מוצע (Proposed) — מיושם כשיהיו 2+ מופעים.
-- **תאריך:** 2026-08-21
+- **מצב:** מיושם (Implemented) — מופעל באמצעות דגל מותנה `SignalR:UseRedisBackplane`.
+- **תאריך:** 2026-08-21 (עודכן 2026-08-23)
 - **בעל החלטה:** RTM — Backend (.NET 8, Asp.NET Core) → Frontend (React + TS)
 
 ## הקשר (Problem): הנתק בין Pods
@@ -70,20 +70,35 @@ Client-X (→Pod A)   Client-Y (→Pod B)
 3. **החלטה:** Redis Pub/Sub (Backplane) — הסטנדרט המומלץ ע"י מיקרוסופט, מנוף
    קיים, ופשוט להוספה כשעולים ל-2+ מופעים.
 
-## שלב היישום העתידי (כשנעבור ל-2+ מופעים)
+## מימוש — דגל מותנה (Conditional)
 
-```bash
-# תלות חדשה (חובה) — מכניסה את ה-Backplane:
-dotnet add src/RTM.Api package Microsoft.AspNetCore.SignalR.StackExchangeRedis
-```
+החבילה הותקנה ו-`Program.cs` נרשם מותנית:
+
 ```csharp
-// ב-Program.cs — שינוי יחיד ב-SignalR registration:
-builder.Services.AddSignalR()
-    .AddStackExchangeRedis(builder.Configuration["Redis:Configuration"]);
+// Program.cs — SignalR registration (conditional backplane):
+builder.Services.AddSignalR();
+if (builder.Configuration.GetValue<bool>("SignalR:UseRedisBackplane"))
+{
+    builder.Services.AddSignalR()
+        .AddStackExchangeRedis(options =>
+        {
+            options.Configuration = builder.Configuration["SignalR:Redis"];
+        });
+}
 ```
-```yaml
-# קובצי ה-K8s הקיימים אינם משתנים — Redis כבר מנוהל בתוך-קלאסטר.
-```
-עם יישום זה נוסיף בדיקת אינטגרציה עם `WebApplicationFactory` המוכיחה שאירוע
-שנכנס ל-Pod A מגיע ללקוחות של Pod B דרך ה-Backplane.
-כל חתימה של `AddressCache` כפולה תיבדק ב-Tests интеграции `WebApplicationFactory`.
+
+- **`SignalR:UseRedisBackplane`** (default `false`): הפעלת ה-Backplane. מוגדר ב-
+  `appsettings.json` ובר-החלפה מ-`env` בלי לשנות קוד — נדרש לפריסה מרובת-מופעים
+  (`replicas > 1`).
+- **`SignalR:Redis`** (default `redis:6379`): ה-host:port של ה-Redis אליו מתחברים כל
+  הפודים (בקלאסטר: סרוויס ה-Redis הפנימי; ב-K8s manifests כבר קיים `Redis__Configuration`).
+- עם `false` (ברירת המחדל, דמו/חד-מופעי) — נשאר **in-process** בדיוק כמו קודם,
+  ללא תלות בפריסה: החד-מופעי אינו נשבר ואינו דורש Redis.
+- ה-`TransactionHub` + `SignalRTransactionBroadcaster` אינם השתנו — ברגע שה-Backplane
+  מופעל, `Clients.All.SendAsync` פורס את האירוע אוטומטית לכל הפודים המחוברים לערוץ
+  המשותף. בלי double-broadcast (שיר יחיד ל-`SendAsync`).
+
+> **מגבלה (חד-מופעי, default):** בפריסה של מופע אחד אין נתק בין-מופעי מלכתחילה —
+> כל הלקוחות מתחברים לאותו hub. רק כשמריצים `replicas > 1` חייבים להפעיל
+> `UseRedisBackplane=true` (ולספק כתובת Redis). אימות חי של שני pods/ערוץ משותף
+> מיועד להרצה מרובת-מופעים (Docker/K8s); ברירת המחדל נשארת חד-מופעית.
