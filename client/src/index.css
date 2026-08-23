@@ -366,3 +366,229 @@ body {
   align-items: center;
   gap: 0.75rem;
 }
+
+/* ---- View toggle (Cards / Table) ---- */
+.view-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.view-toggle__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.view-toggle__btn:hover {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  color: var(--text);
+}
+
+.view-toggle__btn--active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.view-toggle__btn--active:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.view-toggle__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.view-toggle__icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+/* ---- Transaction table ---- */
+.tx-table__wrapper {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+
+.tx-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.85rem;
+  min-width: 620px;
+}
+
+.tx-table__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.tx-table__th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--bg) 60%, var(--surface));
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.tx-table__th--sortable {
+  cursor: pointer;
+}
+
+.tx-table__th--sortable:hover {
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg) 60%, var(--surface));
+  color: var(--text);
+}
+
+.tx-table__th:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.tx-table__sort-icon {
+  font-size: 0.65rem;
+  margin-left: 0.15rem;
+}
+
+.tx-table__sort-icon--inactive {
+  opacity: 0.3;
+}
+
+.tx-table__th--sortable:hover .tx-table__sort-icon--inactive {
+  opacity: 0.7;
+}
+
+.tx-table__body .tx-table__row {
+  transition: background 0.12s ease;
+}
+
+.tx-table__body .tx-table__row:nth-child(even) {
+  background: color-mix(in srgb, var(--bg) 35%, var(--surface));
+}
+
+.tx-table__body .tx-table__row:hover {
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.tx-table__td {
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  line-height: 1.4;
+}
+
+.tx-table__body .tx-table__row:last-child .tx-table__td {
+  border-bottom: none;
+}
+
+.tx-table__id {
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Amount column: right-align currency values */
+.tx-table__th:nth-child(2),
+.tx-table__td:nth-child(2) {
+  text-align: right;
+}
+
+.tx-table__td:nth-child(2) {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Currency: center */
+.tx-table__th:nth-child(3),
+.tx-table__td:nth-child(3) {
+  text-align: center;
+}
+
+.tx-table__td:nth-child(3) {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* Status: center */
+.tx-table__th:nth-child(4),
+.tx-table__td:nth-child(4) {
+  text-align: center;
+}
+
+/* Timestamp: respect the table's natural left alignment */
+.tx-table__td:nth-child(5) {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Table empty state */
+.tx-table__empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.tx-table__empty p {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+/* ---- Table row entrance animation ---- */
+@keyframes tx-row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tx-table__body .tx-table__row {
+  animation: tx-row-enter 0.25s ease-out;
+}
+
+/* Honour reduced-motion: disable entrance animations for table rows */
+@media (prefers-reduced-motion: reduce) {
+  .tx-table__body .tx-table__row {
+    animation: none;
+  }
+
+  .tx-table__body .tx-table__row:hover {
+    background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  }
+}

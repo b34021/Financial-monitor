@@ -984,3 +984,126 @@ node --test   → ✓ 12/12 pass
 
 ### git
 - **לא בוצע commit** — השינויים (README.md + PROGRESS.md) ב-working tree ממתינים לאישורך (כולל השינויים הקודמים של Backplane ממשימה קודמת).
+
+---
+
+## אודיט D (שלב 4 מ-4) — Frontend / UI / Testing — ✅ דו"ח נקי; תיקון P2 יחיד (test script)
+
+### תיקון P2 שבוצע (קוד יחיד — `client/package.json`)
+- נוסף סקריפט `test` ל-`scripts`:
+  ```
+  "test": "node --test \"tests/*.test.ts\""
+  ```
+- **למה `tests/*.test.ts` (glob) ולא `tests/`:** ב-Node 24 `node --test tests/` (נתיב תיקייה) נחשב למודול ומנסה `require('.../tests')` → `MODULE_NOT_FOUND`. glob מפורש יציב ופורטבילי.
+- ה-`npm run test` מורץ מ-`client/` (שם ה-node_modules).
+
+### אימות — הרצתי בפועל מ-`client/`
+```
+npm run test → tests 12 · suites 3 · pass 12 · fail 0 · duration ~159ms
+```
+- כל 12 הבדיקות עוברות ללא שגיאות: sortNewestFirst (2), applyStatusFilter (5), normalizeStatus (5).
+- `package.json` אומת כ-JSON תקני (`node -e JSON.parse` → OK).
+
+### מקור הבדיקות (קיים, טרם עמדו מאחורי script)
+- `client/tests/liveData.test.ts` — runner של Node (`node:test`), ללא extra tooling, על פונקציות טהורות ב-`src/services/liveData.ts` + `src/services/status.ts`.
+
+### קבצים ששונו
+- ✏️ `client/package.json` — הוספת `"test"` ל-`scripts` (שורה אחת בלבד).
+
+### איזן הודעת אודיט D — סיכום
+- 1/6 perf ✅ · 2/6 סינון derived + counter תואם ✅ · 3/6 Enhanced UI (tx-enter/flash/reduced-motion) ✅ · 4/6 Routes + services layer ✅ · 5/6 Testing ✅ (אחרי ה-P2) · 6/6 StatusBadge + CSS ✅
+- **P1: אין.** ה-P2 היחיד (חסר test script) תוקן ונוסף כסטטוס "הושלם" במשימה זו.
+
+### git
+- **לא בוצע commit** — השינוי (client/package.json + PROGRESS.md) ב-working tree; ממתין לאישורך (על פי חוק: אין `git add/commit/push` ללא אישור).
+
+---
+
+## משימה 8.0 — Table View (TanStack Table v9) ל-MonitorPage
+
+**סטטוס:** ✅ הושלם
+
+### תיאור
+הוספת תצוגת Table מקצועית ללוח /monitor תוך שמירה מלאה על תצוגת Cards הקיימת. המשתמש יכול לעבור בין Cards ↔ Table באמצעות ViewToggle.
+
+### קבצים שנוצרו/שונו
+- `client/src/components/ViewToggle.tsx` — **נוצר**: כפתורי wybor תצוגה (Cards / Table), נגיש (role=radiogroup), משתלב ב-page__header-actions.
+- `client/src/components/TransactionTable.tsx` — **נוצר**: טבלה מקצועית מבוססת TanStack Table v9 (useTable + tableFeatures + rowSortingFeature + createColumnHelper). מקבלת transactions דרך props בלבד — ללא חיבור SignalR, ללא state נוסף.
+- `client/src/pages/MonitorPage.tsx` — **שונה**: הוספת `useState<ViewMode>('cards')`, ייבוא ViewToggle + TransactionTable, תצוגה מותנית (Cards/Table).
+- `client/src/index.css` — **שונה**: הוספת ~200 שורות CSS — ViewToggle (כפתורים מובחנים), tx-table (sticky header, row striping, hover, sort icons, empty state, entrance animation, reduced-motion).
+- `client/package.json` — **שונה**: נוספה תלות `@tanstack/react-table@9.1.2`.
+
+### החלטות טכניות
+1. **TanStack Table v9 (לא v8):** החבילה שהותקנה (npmjs האחרון) היא v9. ה-API שונה מהותית מ-v8 — `useTable` במקום `useReactTable`, `tableFeatures` להגדרת features, `createColumnHelper<F, TData>()` עם 2 type params. השתמשתי ב-API המקורי (v9) ולא ב-legacy compatibility layer.
+2. **getAllCells()** במקום `getVisibleCells()`: `getVisibleCells` דורש columnVisibilityFeature — כדי לשמור על tree-shaking מינימלי, השתמשתי ב-`getAllCells()` (זמין תמיד מ-core rows feature).
+3. **שליפת sorting state:** `useTable` מקבל selector שני — `(state) => ({ sorting: state.sorting })` — כדי להירשם לשינויים ב-sorting בלבד ולא בכל state.
+4. **key={transactionId}:** נשמר על TransactionCard (קיים) וטבלה נשענת על React re-render הרגיל דרך props.
+5. **אין שכפול state:** TransactionTable מקבל `transactions` כ-prop — אותם נתונים בדיוק שמוזרמים ל-Cards view.
+
+### ארכיטקטורת זרימת נתונים
+```
+SignalR
+   ↓
+useLiveTransactions  (fullList + filter → visibleList)
+   ↓
+MonitorPage          (view state: 'cards' | 'table')
+   ↓
+visibleList ────→ TransactionCard (if cards)
+             └──→ TransactionTable (if table)
+```
+
+### מאפייני הטבלה
+- 5 עמודות: Transaction ID, Amount, Currency, Status, Timestamp
+- מיון מובנה (TanStack Table sorting) בעמודות Amount, Currency, Status, Timestamp
+- Transaction ID: monospace, truncate עם ellipsis + title מלא, לא ניתן למיון (UUID)
+- Status: מחזיר מחדש את StatusBadge הקיים — צבעים ולוגיקה לא משוכפלים
+- Timestamp: משתמש באותה פונקציית `formatTimestamp` (בהעתקה מקומית — `TransactionCard` גם מחזיק עותק משלו; שיפור עתידי אפשרי)
+- Sticky header (position: sticky)
+- Row striping (even rows — רקע מודגש קל)
+- Hover state (הצללה קלה)
+- גלילה אופקית ב-wrapper בעת overflow
+- Empty state: `No transactions yet` — סגנון תואם לדשבורד הקיים
+- Transaction IDs קריאים (monospace, truncate חכם)
+- ברירת מחדל: מיון לפי timestamp יורד (החדש ביותר למעלה)
+
+### ViewToggle
+- שני כפתורי רדיו (Cards / Table) בקבוצה
+- active view מודגש בצבע accent
+- נגיש: role=radiogroup, aria-checked, focus-visible, מקלדת
+- ממוקם ב-page__header-actions, לפני ErrorFilterToggle
+
+### אנימציות
+- כניסת שורות טבלה: opacity 0→1 + translateY(-4px) →0 ב-0.25s
+- `prefers-reduced-motion`: כל האנימציות מבוטלות
+- **אין אנימציית flash** — טבלה מקבלת אנימציית כניסה עדינה לכולן (react re-render מזהה שורות חדשות)
+- **אין אנימציה יקרה** — רק opacity/translateY, לא layout animations
+
+### אימות — לא נעשה שינוי ברגרסיה
+| פריט | סטטוס |
+|---|---|
+| Cards view נשמר כפי שהיה | ✅ |
+| Table view עובד | ✅ |
+| View toggle עובד | ✅ |
+| SignalR connection לא שונתה | ✅ (אין נגיעה) |
+| SignalR reconnect לא שונה | ✅ |
+| useLiveTransactions לא שונה | ✅ |
+| MAX_TRANSACTIONS = 200 | ✅ |
+| אין שכפול state טרנזקציות | ✅ |
+| אין polling | ✅ |
+| אין debounce/throttle | ✅ |
+| אין virtualization | ✅ |
+| אין שינוי backend | ✅ |
+| Existing filtering (ErrorFilterToggle) ממשיך לעבוד | ✅ |
+| StatusBadge ממוחזר | ✅ |
+| Transaction model ממוחזר | ✅ |
+| Existing tests עדיין עוברים | ✅ |
+| npm test | 12/12 pass ✅ |
+| npm lint | pass ✅ |
+| npm build | pass ✅ |
+| dotnet build | 0 errors ✅ |
+| dotnet test | 51/51 pass ✅ |
+| PROGRESS.md עודכן | ✅ |
+| No commit | ✅ |
+
+### git
+- **לא בוצע commit** — השינויים (5 files: ViewToggle.tsx + TransactionTable.tsx + MonitorPage.tsx + index.css + package.json + PROGRESS.md) ב-working tree; ממתין לאישורך.
