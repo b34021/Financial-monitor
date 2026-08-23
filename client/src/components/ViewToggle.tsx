@@ -1,4 +1,4 @@
-export type ViewMode = 'cards' | 'table';
+export type ViewMode = 'cards' | 'table' | 'dashboard';
 
 interface ViewToggleProps {
   view: ViewMode;
@@ -7,7 +7,8 @@ interface ViewToggleProps {
 
 /**
  * Two-state view switcher for the live monitor. Toggles between the existing
- * card-based feed ("Cards") and the new professional grid ("Table"). The active
+ * card-based feed ("Cards"), the professional grid ("Table"),
+ * and the analytics dashboard ("Dashboard"). The active
  * view is visually highlighted; clicking the inactive label switches to it.
  * Keyboard accessible — the buttons are focusable and activate on Enter/Space.
  */
@@ -31,6 +32,15 @@ export function ViewToggle({ view, onViewChange }: ViewToggleProps) {
       >
         <span className="view-toggle__icon" aria-hidden="true">⊞</span>
         Table
+      </button>
+      <button
+        className={`view-toggle__btn${view === 'dashboard' ? ' view-toggle__btn--active' : ''}`}
+        role="radio"
+        aria-checked={view === 'dashboard'}
+        onClick={() => onViewChange('dashboard')}
+      >
+        <span className="view-toggle__icon" aria-hidden="true">⬡</span>
+        Dashboard
       </button>
     </div>
   );

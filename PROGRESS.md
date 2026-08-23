@@ -1107,3 +1107,70 @@ visibleList ────→ TransactionCard (if cards)
 
 ### git
 - **לא בוצע commit** — השינויים (5 files: ViewToggle.tsx + TransactionTable.tsx + MonitorPage.tsx + index.css + package.json + PROGRESS.md) ב-working tree; ממתין לאישורך.
+
+---
+
+## משימה 9.x — Dashboard Analytics (KPI + Pie + Line + Bar) ✅
+
+**סטטוס:** ✅ הושלם
+
+### תיאור
+לוח מחוונים (Dashboard) אנליטי בזמן-אמת לדף /monitor, עם ViewMode 'dashboard' חדש.
+מציג:
+- **KPI Grid** — 4 כרטיסים: Total Transactions, Completed Revenue, Success Rate, Failed
+- **Pie Chart** — התפלגות סטטוסים (Completed/Pending/Failed) ב-donut
+- **Line Chart** — מגמת Revenue לאורך זמן (Daily/Weekly/Monthly/Yearly)
+- **Bar Chart** — פילוח Currency×Status (stacked amounts)
+
+### קבצים שנוצרו/שונו
+- `client/src/components/ViewToggle.tsx` — **שונה** — ViewMode מורחב ל-'cards'|'table'|'dashboard'; כפתור Dashboard (⬡) נוסף
+- `client/src/components/TransactionDashboard.tsx` — **נוצר** → התפתח לסעיף מלא; מרכיב KPI→Line+Pie side-by-side→Bar
+- `client/src/components/DashboardKpiGrid.tsx` — **נוצר** — 4 KPI cards (useMemo, aggregateKpis live)
+- `client/src/components/StatusPieChart.tsx` — **נוצר** — Recharts donut PieChart, legend below, empty state
+- `client/src/components/RevenueTrendChart.tsx` — **נוצר** — Recharts LineChart, period selector (Daily/Weekly/Monthly/Yearly)
+- `client/src/components/CurrencyStatusChart.tsx` — **נוצר** — Recharts stacked BarChart Currency×Status
+- `client/src/pages/MonitorPage.tsx` — **שונה** — view==='dashboard' → TransactionDashboard; default view='cards'
+- `client/src/services/aggregations.ts` — **נוצר** — 4 pure functions: aggregateKpis, aggregateStatusCounts, aggregateRevenueByPeriod, aggregateCurrencyStatus
+- `client/tests/aggregations.test.ts` — **נוצר** — 21 unit tests
+- `client/src/index.css` — **שונה** — ~200 שורות: .dashboard, .kpi-grid, .kpi-card, .chart-container, .chart-title-row, .period-toggle, .chart-empty, .chart-disclaimer, .chart-legend, .dashboard__charts-row (responsive grid)
+
+### Packages
+- `recharts@^2.15.3` — 37 packages
+
+### החלטות
+
+**Currency — Multi-currency support:**
+הפרויקט תומך במטבעות מרובים (USD, EUR, ILS, all ISO-3). לכן:
+- **completedRevenue** → `Record<string, number>` — סכום לפי מטבע (ללא המרה)
+- **aggregateCurrencyStatus** → פילוח per-currency×per-status
+- **RevenueTrendChart** → עקומת raw amount יחידה (לא per-currency) עם disclaimer: *"Revenue shown in raw amounts per period. For per-currency breakdown use the Currency Status table."*
+- **CurrencyStatusChart** → stacked BarChart עם absolute amounts (סכומים) grouped by currency
+- Reason: Line multi-series was considered but adds complexity (color assignment, legend, mixed-bucket semantics) for limited value in this MVP. aggregateCurrencyStatus already provides per-currency breakdown in table form.
+
+**Dashboard layout (responsive):**
+- KPI grid: auto-fit 180px columns
+- Pie + Line: side-by-side (1fr 1fr) via .dashboard__charts-row, collapses to single column below 640px
+- Bar: full-width below
+
+**No regression:**
+- Cards/Table unchanged
+- SignalR untouched
+- Default view remains 'cards'
+- Existing filter (ErrorFilterToggle) works across all views
+- No additional connections or state duplication
+
+### אימות
+
+| בדיקה | תוצאה |
+|---|---|
+| **npm run build** | ✅ success (924 modules, 962KB) |
+| **npm run lint** | ✅ 0 errors |
+| **npm test** | ✅ **35/35 pass** (21 aggregations + 14 existing) |
+| **dotnet build** | ✅ 0 errors, 0 warnings |
+| **dotnet test** | ✅ **51/51 pass** |
+
+### git
+- **לא בוצע commit** — השינויים (multiple new + edited files ב-working tree); ממתין לאישורך.
+
+### ❗ STOP
+- **עצירה לצורך אישורך:** Dashboard analytics הושלם. לא לעבור הלאה.

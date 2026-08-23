@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ErrorFilterToggle } from '../components/ErrorFilterToggle';
 import { TransactionCard } from '../components/TransactionCard';
+import { TransactionDashboard } from '../components/TransactionDashboard';
 import { TransactionTable } from '../components/TransactionTable';
 import { ViewToggle, type ViewMode } from '../components/ViewToggle';
 import { useLiveTransactions } from '../hooks/useLiveTransactions';
@@ -42,7 +43,9 @@ export function MonitorPage() {
         </div>
       </div>
 
-      {view === 'cards' ? (
+      {view === 'dashboard' ? (
+        <TransactionDashboard transactions={transactions} />
+      ) : view === 'cards' ? (
         transactions.length === 0 ? (
           <p className="page__empty">
             {errorsOnly
