@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ErrorFilterToggle } from '../components/ErrorFilterToggle';
 import { TransactionCard } from '../components/TransactionCard';
 import { TransactionDashboard } from '../components/TransactionDashboard';
@@ -24,6 +24,15 @@ export function MonitorPage() {
   const errorsOnly = filter === 'failed';
   const [view, setView] = useState<ViewMode>('table');
 
+  /** Status filter shared between table and dashboard views. */
+  const [statusFilter, setStatusFilter] = useState<string>('All');
+
+  /** Dashboard receives filtered data when a status filter is active. */
+  const dashboardTransactions = useMemo(() => {
+    if (statusFilter === 'All') return transactions;
+    return transactions.filter((tx) => tx.status === statusFilter);
+  }, [transactions, statusFilter]);
+
   return (
     <section className="page">
       <ToastContainer />
@@ -47,7 +56,25 @@ export function MonitorPage() {
       </div>
 
       {view === 'dashboard' ? (
-        <TransactionDashboard transactions={transactions} />
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="pill-filter"
+              aria-label="Filter by status"
+            >
+              <option value="All">All</option>
+              <option value="Pending">Pending</option>
+              <option value="Completed">Completed</option>
+              <option value="Failed">Failed</option>
+            </select>
+            <span className="text-xs font-medium text-[var(--muted)]">
+              {dashboardTransactions.length} transaction{dashboardTransactions.length === 1 ? '' : 's'} visible
+            </span>
+          </div>
+          <TransactionDashboard transactions={dashboardTransactions} />
+        </>
       ) : view === 'cards' ? (
         transactions.length === 0 ? (
           <p className="page__empty">
@@ -68,7 +95,7 @@ export function MonitorPage() {
           </div>
         )
       ) : (
-        <TransactionTable transactions={transactions} />
+        <TransactionTable transactions={transactions} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} />
       )}
     </section>
   );

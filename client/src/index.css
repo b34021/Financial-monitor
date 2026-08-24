@@ -232,6 +232,54 @@ body {
   color: var(--bad);
 }
 
+/* ---- Filter pill controls (status dropdown + min amount) ---- */
+.pill-filter {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  transition: background 0.15s ease;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  font-family: inherit;
+  line-height: 1.4;
+}
+.pill-filter:hover {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+.pill-filter:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* Status dropdown — arrow via background SVG */
+select.pill-filter {
+  padding-right: 1.6rem;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7483' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.45rem center;
+  background-size: 0.95rem;
+  background-repeat: no-repeat;
+}
+
+/* Number input — hide spinners */
+.pill-filter--num {
+  width: 5.5rem;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+.pill-filter--num::-webkit-inner-spin-button,
+.pill-filter--num::-webkit-outer-spin-button {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 /* ---- Live feed ---- */
 .tx-feed {
   display: grid;
@@ -559,6 +607,9 @@ body {
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tx-table__body .tx-table__row:last-child .tx-table__td {
@@ -627,11 +678,20 @@ body {
   font-size: 0.95rem;
 }
 
+/* ---- Flash animation for newly arrived rows ---- */
+@keyframes tx-flash-row {
+  0%   { background-color: rgba(59, 130, 246, 0.18); }
+  100% { background-color: transparent; }
+}
+.tx-table__row--flash {
+  animation: tx-flash-row 1.5s ease-out forwards;
+}
+
 /* ---- Table row entrance animation ---- */
 @keyframes tx-row-enter {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: translateY(-16px);
   }
   to {
     opacity: 1;
@@ -639,19 +699,66 @@ body {
   }
 }
 
-.tx-table__body .tx-table__row {
-  animation: tx-row-enter 0.25s ease-out;
+.tx-table__body .tx-table__row--enter {
+  animation: tx-row-enter 0.3s ease-out;
 }
 
 /* Honour reduced-motion: disable entrance animations for table rows */
 @media (prefers-reduced-motion: reduce) {
-  .tx-table__body .tx-table__row {
+  .tx-table__body .tx-table__row--enter {
+    animation: none;
+  }
+  .tx-table__row--flash {
     animation: none;
   }
 
   .tx-table__body .tx-table__row:hover {
     background: color-mix(in srgb, var(--accent) 5%, var(--surface));
   }
+}
+
+/* ── Auto-scroll toggle button ── */
+.auto-scroll-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  outline: none;
+  flex-shrink: 0;
+}
+.auto-scroll-btn:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+.auto-scroll-btn:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.auto-scroll-btn--on {
+  color: var(--accent);
+}
+.auto-scroll-btn--on:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+.auto-scroll-btn__icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  display: block;
+}
+/* Subtle pulse ring when active — very faint, not distracting */
+@keyframes auto-scroll-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(47, 111, 237, 0.1); }
+  50%      { box-shadow: 0 0 0 4px rgba(47, 111, 237, 0.05); }
+}
+.auto-scroll-btn--on {
+  animation: auto-scroll-pulse 2.5s ease-in-out infinite;
 }
 
 /* ─────────────────────────────────────────────

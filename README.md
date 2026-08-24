@@ -6,6 +6,38 @@ and streams them in real-time to a live dashboard — including cache-backed his
 **Backend** = .NET 8 (ASP.NET Core minimal API) · **Frontend** = React + TypeScript
 (Vite) · **Realtime** = SignalR · **Cache** = Redis (with fallback to InMemory).
 
+## Features
+
+- **Real-time ingestion** — POST `/add` inserts transactions; they appear instantly on the live dashboard via SignalR
+- **Live dashboard** — `/monitor` with virtual-scroll table, status filter, min-amount filter, flash + slide-in animations
+- **Auto-scroll toggle** — follow new transactions as they arrive or browse history freely
+- **Filter controls** — filter by transaction status (All / Pending / Completed / Failed) and minimum amount
+- **Cache-backed history** — Redis cache-aside with transparent InMemory fallback; clients receive initial state on reconnect
+- **Multi-replica ready** — Docker Compose + Kubernetes manifests (3 replicas) + optional Redis backplane for cross-replica SignalR
+- **Dark mode** — full dark mode support for the dashboard UI
+
+## Data Flow
+
+```
+/add (POST)  →  TransactionApiService  →  TransactionService (validate + persist)
+                                                  │
+                                          ┌───────┴───────┐
+                                          ▼               ▼
+                                  ITransactionStore  ITransactionCache
+                                  (persist)          (invalidate list)
+                                          │
+                                          ▼
+                                  ITransactionBroadcaster
+                                          │
+                                          ▼
+                                  SignalR Hub  ──→  Dashboard clients
+```
+
+1. **Ingestion:** Client sends POST `/add` with transaction payload → `TransactionApiService` validates the DTO → calls `TransactionService.ProcessAsync()`.
+2. **Persistence:** `TransactionService` constructs a `Transaction` domain object, persists it via `ITransactionStore`, and invalidates the cached list (`ITransactionCache.InvalidateListAsync`) — write-invalidate pattern.
+3. **Broadcast:** After persistence, the service calls `ITransactionBroadcaster` → `SignalRTransactionBroadcaster` pushes the new transaction to all connected SignalR clients via `Clients.All.SendAsync("TransactionReceived")`.
+4. **Dashboard on connect:** A fresh client receives cache-backed history as `InitialTransactions` — served from Redis (or InMemory fallback) to avoid a full store scan on every reconnect.
+
 ## Architecture
 
 ```
@@ -35,17 +67,17 @@ and streams them in real-time to a live dashboard — including cache-backed his
 
 1. **Backend** — Terminal 1:
    ```
-   dotnet run --project server/src/RTM.Api      # → http://localhost:5248  (swagger)
+   dotnet run --project server/src/RTM.Api      # → http://localhost:5248  (swagger /health)
    ```
 2. **Frontend** — Terminal 2:
    ```
    cd client && npm install && npm run dev   # → http://localhost:5173
    ```
-3. Ready: `/add` to send transactions · `/monitor` for the live dashboard + toggle "Show only errors".
+3. Ready: [`/add`](client/src/pages/AddPage.tsx) to send transactions · [`/monitor`](client/src/pages/MonitorPage.tsx) for the live dashboard · `/health` to verify backend liveness.
 
 ## Testing
 
-Run the automated checks for both parts of the stack:
+Run the automated checks for the full stack:
 
 ```
 # Backend — unit + integration tests (xUnit, see server/tests/RTM.Tests)
@@ -54,9 +86,23 @@ dotnet test
 # Frontend — type-check + lint
 cd client && npm run lint
 
-# Frontend — production build
+# Frontend — production build (Vite)
 cd client && npm run build
 ```
+
+> **Note:** `dotnet test` requires the .NET 8 SDK; `npm run build` requires Node.js 18+.
+> See [CI/CD](#cicd) for automated pipeline details.
+
+## CI/CD
+
+A GitHub Actions workflow (`.github/workflows/ci.yml`) can be added to automate:
+
+1. Restore + build the backend (`dotnet restore` + `dotnet build`)
+2. Run all unit and integration tests (`dotnet test`)
+3. Install frontend dependencies and build the client (`npm ci` + `npm run build`)
+4. Type-check and lint the frontend
+
+> Trigger on every push and pull request to the `main` branch.
 
 ## Docker (docker-compose)
 
@@ -64,30 +110,32 @@ Requirement: Docker Desktop installed. From the project root:
 ```
 docker compose up --build
 ```
-Runs `backend` (multi-stage image, port 8080) + `redis:7-alpine` (port 6379,
-healthcheck). The backend is configured with env `Redis__Configuration=redis:6379`; if Redis
-is unavailable — the application falls back to InMemory.
+Runs **`rtmonitor-api`** (multi-stage image, port 8080) + **`redis:7-alpine`** (port 6379,
+healthcheck). The API container is configured with environment variable
+`Redis__Configuration=redis:6379`; if Redis is unavailable or starts slowly, the
+application **falls back to InMemory** automatically with zero manual intervention.
 
-Build manually:
+Build images manually:
 ```
 docker build -f server/src/RTM.Api/Dockerfile -t rtmonitor-api .
 ```
 
 ## Kubernetes
 
-Manifests in the [`k8s/`](k8s/) directory: [`deployment.yaml`](k8s/deployment.yaml) (3 replicas + Service — the Service is included in the same file), [`redis.yaml`](k8s/redis.yaml) (in-cluster Redis). Run:
+Manifests in [`k8s/`](k8s/): [`deployment.yaml`](k8s/deployment.yaml) (3 replicas + Service — the Service is included in the same file), [`redis.yaml`](k8s/redis.yaml) (in-cluster Redis with healthcheck). Run:
+
 ```
 kubectl apply -f k8s/redis.yaml
 kubectl apply -f k8s/deployment.yaml
 kubectl get pods -w        # 3/3 Ready when probes pass
 kubectl port-forward svc/rtmonitor-api 8080:8080
 ```
-Probes (`/health`) → liveness + readiness. Each replica hosts its own SignalR hub instance;
-the Redis backplane distributes SignalR messages across replicas — **ADR-003** (SignalR Redis Backplane).
 
-**Redis backplane is now implemented and enabled via `SignalR:UseRedisBackplane=true`.**
-The demo default (`false`) remains single-instance for simplicity. For multi-replica
-deployments, set the flag to `true` (and provide a Redis endpoint via `SignalR:Redis`).
+Probes (`/health`) → liveness + readiness. Each replica hosts its own SignalR hub instance;
+the Redis backplane distributes SignalR messages across replicas — see [ADR-003](docs/ADR-003-signalr-redis-backplane.md).
+
+> **Backplane flag:** `SignalR:UseRedisBackplane=true` (default `false` for single-instance simplicity).
+> Set it to `true` (and provide a Redis endpoint via `SignalR:Redis`) for multi-replica deployments.
 
 ## Decision Records
 

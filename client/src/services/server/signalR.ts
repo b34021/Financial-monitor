@@ -25,7 +25,7 @@ export class TransactionHubClient {
     const connection = new signalR.HubConnectionBuilder()
       .withUrl(SIGNALR_HUB_URL)
       .withAutomaticReconnect()
-      .configureLogging(signalR.LogLevel.Warning)
+      .configureLogging(signalR.LogLevel.None)
       .build();
 
     connection.on('InitialTransactions', (list: Transaction[]) => {
@@ -38,9 +38,12 @@ export class TransactionHubClient {
     this._connection = connection;
   }
 
+  /** Connect and log success only. Connection failures are expected (backend not
+   *  running yet) and handled by the caller — no noisy console output. */
   async start(): Promise<void> {
     if (this._connection.state === signalR.HubConnectionState.Disconnected) {
       await this._connection.start();
+      console.info('[SignalR] Connected');
     }
   }
 
