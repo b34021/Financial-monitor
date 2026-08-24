@@ -27,8 +27,8 @@ export function MonitorPage() {
   /** Status filter shared between table and dashboard views. */
   const [statusFilter, setStatusFilter] = useState<string>('All');
 
-  /** Dashboard receives filtered data when a status filter is active. */
-  const dashboardTransactions = useMemo(() => {
+  /** Filtered data driven by status filter (shared across views). */
+  const filteredTransactions = useMemo(() => {
     if (statusFilter === 'All') return transactions;
     return transactions.filter((tx) => tx.status === statusFilter);
   }, [transactions, statusFilter]);
@@ -57,7 +57,7 @@ export function MonitorPage() {
 
       {view === 'dashboard' ? (
         <>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="filter-row">
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -69,22 +69,41 @@ export function MonitorPage() {
               <option value="Completed">Completed</option>
               <option value="Failed">Failed</option>
             </select>
-            <span className="text-xs font-medium text-[var(--muted)]">
-              {dashboardTransactions.length} transaction{dashboardTransactions.length === 1 ? '' : 's'} visible
+            <span className="filter-row__count">
+              {filteredTransactions.length} transaction{filteredTransactions.length === 1 ? '' : 's'} visible
             </span>
           </div>
-          <TransactionDashboard transactions={dashboardTransactions} />
+          <TransactionDashboard transactions={filteredTransactions} />
         </>
       ) : view === 'cards' ? (
-        transactions.length === 0 ? (
+        <>
+          <div className="filter-row">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="pill-filter"
+              aria-label="Filter by status"
+            >
+              <option value="All">All</option>
+              <option value="Pending">Pending</option>
+              <option value="Completed">Completed</option>
+              <option value="Failed">Failed</option>
+            </select>
+            <span className="filter-row__count">
+              {filteredTransactions.length} transaction{filteredTransactions.length === 1 ? '' : 's'} visible
+            </span>
+          </div>
+        {filteredTransactions.length === 0 ? (
           <p className="page__empty">
             {errorsOnly
               ? 'No failed transactions to show.'
-              : 'No transactions yet. Send one from the /add simulator.'}
+              : statusFilter !== 'All'
+                ? `No ${statusFilter} transactions to show.`
+                : 'No transactions yet. Send one from the /add simulator.'}
           </p>
         ) : (
           <div className="tx-feed">
-            {transactions.map((tx, index) => (
+            {filteredTransactions.map((tx, index) => (
               <TransactionCard
                 key={tx.transactionId}
                 transaction={tx}
@@ -93,7 +112,8 @@ export function MonitorPage() {
               />
             ))}
           </div>
-        )
+        )}
+      </>
       ) : (
         <TransactionTable transactions={transactions} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} />
       )}

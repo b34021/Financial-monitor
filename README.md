@@ -63,6 +63,43 @@ and streams them in real-time to a live dashboard — including cache-backed his
   is queried and the result is cached. After a new transaction is persisted, the cached list
   is invalidated (write-invalidate). If Redis is unavailable → transparent InMemory fallback.
 
+**Data Storage Decision**
+
+Transactions are stored in-memory (`ConcurrentDictionary`, thread-safe) rather than SQLite.
+
+**Why RAM, not SQLite?**
+
+| Concern | RAM | SQLite |
+|---|---|---|
+| Latency | ✅ Very low | ⚠️ Higher (disk I/O) |
+| Single replica MVP | ✅ Simple, fast | ✅ Works |
+| Multiple replicas | ❌ Per-pod state | ❌ Same problem (local file per pod) |
+| Production distributed | ❌ | ❌ |
+
+Both RAM and a local SQLite database are process/node-local storage options and
+therefore do not provide shared transaction state across replicas.
+For production horizontal scaling, transaction state should be moved to a
+shared durable store such as PostgreSQL. Redis remains appropriate for
+distributed caching and the SignalR backplane.
+
+The storage is abstracted behind `ITransactionStore` interface. Replacing it with a shared database (PostgreSQL) requires changing one implementation.
+
+## Screenshots
+
+> 📸 Screenshots are stored in [`docs/screenshot/`](docs/screenshot/).
+
+### Live Dashboard (Analytics View)
+
+![Dashboard Analytics](docs/screenshot/screenshot-live-dashboard.png)
+
+### Table View
+
+![Table View](docs/screenshot/screenshot-table-view.png)
+
+### Transaction Simulator (/add)
+
+![Add Transaction](docs/screenshot/screenshot-add-page.png)
+
 ## Quick Start (Local, without Docker)
 
 1. **Backend** — Terminal 1:
@@ -170,24 +207,3 @@ For a production deployment, I would additionally introduce:
 
 This keeps the MVP focused on the assignment's core requirements while
 providing a clear path toward production hardening.
-
-**Data Storage Decision**
-
-Transactions are stored in-memory (`ConcurrentDictionary`, thread-safe) rather than SQLite.
-
-**Why RAM, not SQLite?**
-
-| Concern | RAM | SQLite |
-|---|---|---|
-| Latency | ✅ Very low | ⚠️ Higher (disk I/O) |
-| Single replica MVP | ✅ Simple, fast | ✅ Works |
-| Multiple replicas | ❌ Per-pod state | ❌ Same problem (local file per pod) |
-| Production distributed | ❌ | ❌ |
-
-Both RAM and a local SQLite database are process/node-local storage options and
-therefore do not provide shared transaction state across replicas.
-For production horizontal scaling, transaction state should be moved to a
-shared durable store such as PostgreSQL. Redis remains appropriate for
-distributed caching and the SignalR backplane.
-
-The storage is abstracted behind `ITransactionStore` interface. Replacing it with a shared database (PostgreSQL) requires changing one implementation.
