@@ -36,6 +36,11 @@ spec:
               value: "redis:6379"
             - name: Redis__Enabled
               value: "true"
+            # Enable the SignalR Redis backplane so all 3 replicas share the
+            # same pub/sub channel — a transaction received by any pod is
+            # broadcast to clients connected to every pod.
+            - name: SignalR__UseRedisBackplane
+              value: "true"
             - name: ASPNETCORE_ENVIRONMENT
               value: "Production"
           readinessProbe:

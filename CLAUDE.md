@@ -8,8 +8,8 @@ MVP של "Real-Time Financial Monitor": API קולט עסקאות, מעבד או
 
 ## טופולוגיה / מבנה
 ```
-src/RTM.Api/          → Backend (.NET 8 webapi) — layers: Api → Services → Store
-tests/RTM.Tests/      → xUnit (unit + integration) — TDD
+server/src/RTM.Api/    → Backend (.NET 8 webapi) — layers: Api → Services → Store
+server/tests/RTM.Tests/→ xUnit (unit + integration) — TDD
 client/               → React + TS (Vite) — routes /add (simulator) + /monitor (live)
 docs/ADR.md           → החלטות ארכיטקטוניות
 PROGRESS.md           → יומן התקדמות (לא למחוק היסטוריה — להוסיף למטה)
@@ -106,7 +106,7 @@ services/, רכיבים משותפים, שמות, axios+tanstackQuery, createBro
 חוקי ארכיטקטורה (חובה, בכל שלבי הפרויקט)
 ═══════════════════════════════════
 
-1. שכבת שירותי - חלוקה בתוך src/RTM.Api:
+1. שכבת שירותי - חלוקה בתוך server/src/RTM.Api:
    - Api (Presentation): אנדפוינטים/Controllers, Program.cs, חיבורים.
    - Services (Application): לוגיקה עסקית, מעבדים, אינטגרציה (קאש/שידור).
    - Core/Domain (טהור): מודלים, interfaces, חוקי-דומיין, ללא תלות חיצונית.

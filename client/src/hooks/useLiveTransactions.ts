@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { TransactionHubClient } from '../services/signalR';
+import { TransactionHubClient } from '../services/server/signalR';
 import { applyStatusFilter, sortNewestFirst, type FeedFilter } from '../services/liveData';
 import type { Transaction } from '../types/transaction';
 
@@ -22,7 +22,7 @@ export type ConnectionState = 'connecting' | 'connected' | 'failed';
  * Every new TransactionReceived lands in fullList regardless of the active
  * filter; Failed ones additionally appear in the visible slice when filtered.
  */
-export function useLiveTransactions() {
+export function useLiveTransactions(onTransactionReceived?: (tx: Transaction) => void) {
   const [fullList, setFullList] = useState<Transaction[]>([]);
   const [filter, setFilter] = useState<FeedFilter>('all');
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
@@ -42,6 +42,8 @@ export function useLiveTransactions() {
         // Functional update — prepend the new head, keep the rest intact,
         // re-sort, and stay within the buffer cap.
         setFullList((prev) => sortNewestFirst([tx, ...prev]).slice(0, MAX_TRANSACTIONS));
+        // Notify the page (e.g. to show a toast).
+        onTransactionReceived?.(tx);
       },
     });
     clientRef.current = client;
@@ -55,7 +57,7 @@ export function useLiveTransactions() {
       void client.dispose();
       clientRef.current = null;
     };
-  }, []);
+  }, [onTransactionReceived]);
 
   const visibleList = applyStatusFilter(fullList, filter);
   const toggleFailedOnly = () => setFilter((prev) => (prev === 'failed' ? 'all' : 'failed'));

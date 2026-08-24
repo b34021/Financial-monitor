@@ -1174,3 +1174,157 @@ visibleList ────→ TransactionCard (if cards)
 
 ### ❗ STOP
 - **עצירה לצורך אישורך:** Dashboard analytics הושלם. לא לעבור הלאה.
+
+---
+
+## תיקון: Cache-aside ל-GetLatestAsync + Backplane env ב-K8s (Proactive — Cross-POD)
+
+**סטטוס:** ✅ הושלם (אומת build+test, 54/54)
+
+### רקע
+בניתוח מעמיק של מצב ה-multi-pod התגלו שני פערים:
+1. `TransactionService.GetLatestAsync` (שנקרא ב-`OnConnectedAsync` לשליחת `InitialTransactions`) לא השתמש ב-cache-aside — הלך ישירות ל-store המקומי של הפוד. במצב multi-pod, Pod B עם store ריק היה שולח רשימה ריקה ללקוח המתחבר.
+2. ב-K8s deployment.yaml לא היה env vars להפעלת `SignalR__UseRedisBackplane=true`, כך שגם עם Redis זמין, ה-backplane נשאר מושבת.
+
+### P1 — תיקון: GetLatestAsync → cache-aside (כמו GetAllAsync)
+
+**הבדיקה (TDD Red→Green):**
+- **Red:** `GetLatest_CacheHasData_StoreEmpty_ServedFromCache` — store ריק, cache מכיל עסקה. נכשל כי `GetLatestAsync` לא נגע ב-cache.
+- **Green:** שינוי `GetLatestAsync` ל-cache-aside:
+  1. `IsAvailableAsync` → `GetCachedListAsync` (מחזיר "t:all")
+  2. If cache hit → slice N last items (OrderByDescending.Timestamp.Take)
+  3. Miss/unavailable → fallback to `_store.GetLatestAsync`
+
+**תיקון בקוד:**
+- `src/RTM.Application/TransactionService.cs` — `GetLatestAsync` עכשיו עושה cache-aside
+- `tests/RTM.Tests/Services/TransactionServiceTests.cs` — 3 בדיקות חדשות (cache hit, unavailable, empty cache)
+
+### P2 — תיקון: env SignalR__UseRedisBackplane=true ב-K8s
+
+**תיקון בקובץ:**
+- `k8s/deployment.yaml` — נוסף env:
+  ```yaml
+  - name: SignalR__UseRedisBackplane
+    value: "true"
+  ```
+  ממוקם בין `Redis__Enabled` ל-`ASPNETCORE_ENVIRONMENT`.
+
+### אימות
+```
+dotnet restore → all up-to-date
+dotnet build   → Build succeeded. 0 Warning(s), 0 Error(s)
+dotnet test    → Passed! Failed: 0, Passed: 54, Skipped: 0, Total: 54
+```
+
+### קבצים ששונו
+- ✏️ `src/RTM.Application/TransactionService.cs` — GetLatestAsync cache-aside
+- ✏️ `tests/RTM.Tests/Services/TransactionServiceTests.cs` — 3 בדיקות TDD
+- ✏️ `k8s/deployment.yaml` — env `SignalR__UseRedisBackplane=true`
+- ✏️ `PROGRESS.md` — רשומה זו
+
+### מה נותר
+- **אימות multi-pod E2E** — דורש Docker Compose scale / K8s מקומי (2 pods + Redis + client). לא אוטומטי.
+- **Redis HA (Sentinel/Replication)** — SPOF מתועד ב-ADR-003, לא טופל.
+
+### ❗ STOP
+- **עצירה לצורך אישורך:** התיקון הושלם וירוק (54/54, 0 warnings).
+
+---
+
+## 🎯 Revenue Trend Line Chart — תיקון ושיפור (Time-Series Continuous)
+
+**סטטוס:** ✅ הושלם (אומת build+test+lint)
+
+### בעיה מקורית
+תרשים Revenue Trend לא הציג רצף זמני רציף (time-series). הוא הראה רק נקודות מבודדות
+וללא חיבור בין תקופות, מה שמנע הבנה של מגמת הכנסות לאורך זמן.
+
+### מה השתנה
+
+#### `client/src/services/aggregations.ts` — `aggregateRevenueByPeriod` נכתב מחדש
+- **רצף זמני מלא:** הפונקציה מייצרת כעת את כל תווי הזמן הצפויים לפי התקופה הנבחרת,
+  גם אם אין בהם עסקאות Completed (ערך 0).
+- **Daily:** 7 הימים הקלנדריים האחרונים (UTC)
+- **Weekly:** 12 השבועות האחרונים (ISO 8601, UTC)
+- **Monthly:** 12 החודשים האחרונים (UTC)
+- **Yearly:** 5 השנים האחרונות (UTC)
+- **מילוי חסרים:** תקופה ללא Completed transactions מקבלת value=0, כך שהציר נשאר רציף
+- **שינוי ארכיטקטורה:** הוספת פונקציות פנימיות `generatePeriodLabels()`, `formatDaily()`,
+  `formatMonthly()`, `formatWeekly()`, `toWeekStart()` — כולן עובדות ב-UTC לפי קונבנציית הפרויקט
+- **bucketLabel** נותר ללא שינוי (משמש למבחנים וייתכן שמשמש קוד חיצוני)
+- **ללא מוטציה** של מערך המקור
+
+#### `client/src/components/RevenueTrendChart.tsx` — שיפור תצוגה
+- הוספת פורמטר לערכי ציר ה-X לפי תקופה (יום → ראשי תיבות יום, חודש → קיצור חודש, שבוע → `W34`, שנה → `2026`)
+- הוספת פורמטר כספי לציר ה-Y (`$0`, `$1.5K`, `$2.3M`)
+- Tooltip משופר: מציג שם תקופה מלא + "Completed Revenue" מעוצב
+- שמירה על שאר התצוגה (period selector, chart-container, disclaimer) ללא שינוי
+
+#### `client/tests/aggregations.test.ts` — בדיקות מורחבות
+- **12 בדיקות חדשות** ל-`aggregateRevenueByPeriod` (בנוסף ל-4 הקיימות):
+  1. `daily returns exactly 7 chronological buckets` ✅
+  2. `weekly returns exactly 12 chronological buckets` ✅
+  3. `monthly returns exactly 12 chronological buckets` ✅
+  4. `yearly returns exactly 5 chronological buckets` ✅
+  5. `Completed transactions are included` ✅
+  6. `Pending transactions are excluded` ✅
+  7. `Failed transactions are excluded` ✅
+  8. `multiple transactions in the same period are summed` ✅
+  9. `results are sorted chronologically (oldest first)` ✅
+  10. `empty periods are represented with value 0` ✅
+  11. `a new transaction changes the correct bucket` (real-time update behavior) ✅
+  12. `does not mutate the original transaction array` ✅
+- **נוספו בדיקות edge case:** zero transactions, only failed, only pending, one day of data
+- **כל הבדיקות הקיימות** (קיימים 36) נשמרו ועודכנו לעבוד עם הפלט החדש (48 סה"כ)
+
+### תוצאות build/test
+```
+# Client
+npm run test    → Tests: 48 passed, 0 failed (all suites)
+npm run build   → tsc -b && vite build — 0 errors
+npm run lint    → oxlint — 0 problems
+
+# Backend (no changes needed)
+dotnet build    → Build succeeded. 0 Warning(s), 0 Error(s)
+dotnet test     → Passed! 54 passed, 0 failed
+```
+
+### קבצים ששונו
+- ✏️ `client/src/services/aggregations.ts` — `aggregateRevenueByPeriod` rewritten
+- ✏️ `client/src/components/RevenueTrendChart.tsx` — tooltip, axis formatting, chart-data derivation
+- ✏️ `client/tests/aggregations.test.ts` — 12 new test cases + edge cases
+- ✏️ `PROGRESS.md` — רשומה זו
+
+### קבצים שלא נגעו (🚫 לא שונה)
+- `client/src/services/signalR.ts` — לא נגע
+- `client/src/hooks/useLiveTransactions.ts` — לא נגע
+- `client/src/types/transaction.ts` — לא נגע
+- `client/src/components/TransactionDashboard.tsx` — לא נגע
+- `client/src/components/DashboardKpiGrid.tsx` — לא נגע
+- `client/src/components/StatusPieChart.tsx` — לא נגע
+- `client/src/components/CurrencyStatusChart.tsx` — לא נגע
+- `client/src/pages/MonitorPage.tsx` — לא נגע
+- `src/RTM.Api/**` — לא נגע
+
+### החלטות עיצוב
+- **UTC anchor:** כל תווי הזמן מעוגנים ל-UTC (Date.UTC) בהתאם לקונבנציית הפרויקט
+  (bucketLabel משתמש ב-getUTC*)
+- **Recharts:** נשמר כספריית התרשימים (קיים package.json)
+- **Monotone interpolation:** נשמר (type="monotone" ב-Line) — מתאים לנתוני revenue
+- **Empty → []:** כשאין Completed transactions, הפונקציה מחזירה [] (ולא 12 חודשים של 0)
+- **Currency:** שמירה על הקונבנציה הקיימת — סכימה בכל מטבע בנפרד (ללא ערבוב מטבעות)
+
+### מה לא שונה (non-regression)
+- ✅ Cards עדיין עובדים
+- ✅ Table עדיין עובד
+- ✅ View selector (Cards/Table/Dashboard)
+- ✅ SignalR — חיבור אחד בלבד
+- ✅ useLiveTransactions — ללא שינוי
+- ✅ KPI calculations
+- ✅ Status Pie Chart
+- ✅ Currency × Status chart
+- ✅ /add page
+- ✅ Backend
+
+### git
+- לא בוצע git add/commit — השינויים ב-working tree ממתינים לאישורך.

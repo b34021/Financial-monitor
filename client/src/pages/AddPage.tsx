@@ -2,6 +2,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useIngestTransaction } from '../hooks/useIngestTransaction';
+import { useTransactionToast } from '../components/TransactionToast';
 import type { TransactionStatus } from '../types/transaction';
 
 /** Client-side defaults for the simulator form. */
@@ -49,20 +50,26 @@ export function AddPage() {
     },
   });
 
-  const { mutate, data: result, error, isPending } = useIngestTransaction();
+  const { mutateAsync, error, isPending } = useIngestTransaction();
+  const { addToast, ToastContainer } = useTransactionToast();
 
   // A deliberate cancellation (component unmount / re-submit while a previous
   // request is in flight) surfaces as an AbortError — never a user-facing error.
   const isAborted = error instanceof DOMException && error.name === 'AbortError';
 
-  const onSubmit = (values: AddTransactionFormValues) => {
-    mutate({
-      transactionId: crypto.randomUUID(),
-      amount: Number(values.amount),
-      currency: values.currency,
-      status: values.status,
-      timestamp: new Date().toISOString(),
-    });
+  const onSubmit = async (values: AddTransactionFormValues) => {
+    try {
+      const saved = await mutateAsync({
+        transactionId: crypto.randomUUID(),
+        amount: Number(values.amount),
+        currency: values.currency,
+        status: values.status,
+        timestamp: new Date().toISOString(),
+      });
+      addToast(saved);
+    } catch {
+      // error state is handled below via the `error` variable
+    }
   };
 
   return (
@@ -106,12 +113,7 @@ export function AddPage() {
         </button>
       </form>
 
-      {result && (
-        <div className="notice notice--ok" data-testid="add-result">
-          <strong>Sent:</strong> {result.amount.toLocaleString()} {result.currency} ·{' '}
-          {result.transactionId.slice(0, 8)}…
-        </div>
-      )}
+      <ToastContainer />
 
       {!isAborted && error && (
         <div className="notice notice--error" data-testid="add-error">

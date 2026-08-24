@@ -1,4 +1,4 @@
-# ADR-003 — סנכרון SignalR בין מופעים (Redis Backplane) לקראת Node × N
+# ADR-003 — SignalR message distribution across replicas (Redis Backplane) for Node × N
 
 - **מצב:** מיושם (Implemented) — מופעל באמצעות דגל מותנה `SignalR:UseRedisBackplane`.
 - **תאריך:** 2026-08-21 (עודכן 2026-08-23)

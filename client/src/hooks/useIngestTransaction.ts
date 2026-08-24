@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ingestTransaction } from '../services/api';
+import { ingestTransaction } from '../services/server/api';
 import type { IngestTransactionRequest, Transaction } from '../types/transaction';
 
 /** Cache key for the "my transactions" feed. */

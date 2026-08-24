@@ -12,7 +12,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: src/RTM.Api/Dockerfile
+      dockerfile: server/src/RTM.Api/Dockerfile
     ports:
       - "8080:8080"
     environment:

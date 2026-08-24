@@ -139,6 +139,48 @@ describe('bucketLabel', () => {
 });
 
 describe('aggregateRevenueByPeriod', () => {
+  const NOW = new Date();
+  const utcNow = new Date(Date.UTC(NOW.getUTCFullYear(), NOW.getUTCMonth(), NOW.getUTCDate()));
+
+  function pad2(n: number): string {
+    return String(n).padStart(2, '0');
+  }
+
+  /** Build expected daily labels: from the most recent Sunday through today (UTC). */
+  function dailyLabels(): string[] {
+    const dayOfWeek = utcNow.getUTCDay(); // 0=Sun … 6=Sat
+    const startDay = new Date(utcNow);
+    startDay.setUTCDate(startDay.getUTCDate() - dayOfWeek); // go back to Sunday
+    const labels: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startDay);
+      d.setUTCDate(d.getUTCDate() + i);
+      labels.push(`${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`);
+    }
+    return labels;
+  }
+
+  /** Build expected monthly labels: last N months ending at the UTC month. */
+  function monthlyLabels(count: number): string[] {
+    const labels: string[] = [];
+    for (let i = count - 1; i >= 0; i--) {
+      const d = new Date(Date.UTC(utcNow.getUTCFullYear(), utcNow.getUTCMonth() - i, 1));
+      labels.push(`${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`);
+    }
+    return labels; // already oldest-first
+  }
+
+  /** Build expected yearly labels: last N years. */
+  function yearlyLabels(count: number): string[] {
+    const labels: string[] = [];
+    for (let i = count - 1; i >= 0; i--) {
+      labels.push(String(utcNow.getUTCFullYear() - i));
+    }
+    return labels; // already oldest-first
+  }
+
+  // ---- Basic cases ----
+
   it('returns empty for no transactions', () => {
     assert.deepEqual(aggregateRevenueByPeriod([], 'monthly'), []);
   });
@@ -148,52 +190,169 @@ describe('aggregateRevenueByPeriod', () => {
     assert.deepEqual(aggregateRevenueByPeriod(list, 'monthly'), []);
   });
 
-  it('groups completed revenue daily', () => {
-    const list = [
-      tx({ amount: 100, timestamp: '2026-08-21T10:00:00Z', status: 'Completed' }),
-      tx({ amount: 50, timestamp: '2026-08-21T14:00:00Z', status: 'Completed' }),
-      tx({ amount: 200, timestamp: '2026-08-22T08:00:00Z', status: 'Completed' }),
-    ];
+  // ---- Bucket count / range ----
+
+  it('daily returns exactly 7 chronological buckets', () => {
+    const list = [tx({ amount: 50, timestamp: utcNow.toISOString(), status: 'Completed' })];
     const result = aggregateRevenueByPeriod(list, 'daily');
-    assert.equal(result.length, 2);
-    assert.equal(result[0].label, '2026-08-21');
-    assert.equal(result[0].value, 150);
-    assert.equal(result[1].label, '2026-08-22');
-    assert.equal(result[1].value, 200);
+    assert.equal(result.length, 7);
+    assert.deepEqual(
+      result.map((r) => r.label),
+      dailyLabels(),
+    );
   });
 
-  it('groups completed revenue yearly', () => {
-    const list = [
-      tx({ amount: 100, timestamp: '2025-06-01T00:00:00Z', status: 'Completed' }),
-      tx({ amount: 200, timestamp: '2026-01-01T00:00:00Z', status: 'Completed' }),
-    ];
+  it('weekly returns exactly 12 chronological buckets', () => {
+    const list = [tx({ amount: 50, timestamp: utcNow.toISOString(), status: 'Completed' })];
+    const result = aggregateRevenueByPeriod(list, 'weekly');
+    assert.equal(result.length, 12);
+  });
+
+  it('monthly returns exactly 12 chronological buckets', () => {
+    const list = [tx({ amount: 50, timestamp: utcNow.toISOString(), status: 'Completed' })];
+    const result = aggregateRevenueByPeriod(list, 'monthly');
+    assert.equal(result.length, 12);
+    assert.deepEqual(
+      result.map((r) => r.label),
+      monthlyLabels(12),
+    );
+  });
+
+  it('yearly returns exactly 5 chronological buckets', () => {
+    const list = [tx({ amount: 50, timestamp: utcNow.toISOString(), status: 'Completed' })];
     const result = aggregateRevenueByPeriod(list, 'yearly');
-    assert.equal(result.length, 2);
-    assert.equal(result[0].label, '2025');
-    assert.equal(result[0].value, 100);
-    assert.equal(result[1].label, '2026');
-    assert.equal(result[1].value, 200);
+    assert.equal(result.length, 5);
+    assert.deepEqual(
+      result.map((r) => r.label),
+      yearlyLabels(5),
+    );
   });
 
-  it('sorts buckets chronologically', () => {
-    const list = [
-      tx({ amount: 50, timestamp: '2026-08-22T00:00:00Z', status: 'Completed' }),
-      tx({ amount: 100, timestamp: '2026-08-21T00:00:00Z', status: 'Completed' }),
-    ];
-    const result = aggregateRevenueByPeriod(list, 'daily');
-    assert.equal(result[0].label, '2026-08-21');
-    assert.equal(result[1].label, '2026-08-22');
+  // ---- Status filtering ----
+
+  it('Completed transactions are included', () => {
+    const list = [tx({ amount: 100, timestamp: utcNow.toISOString(), status: 'Completed' })];
+    const result = aggregateRevenueByPeriod(list, 'monthly');
+    const currentMonth = monthlyLabels(12)[11]; // newest (last) label
+    const bucket = result.find((r) => r.label === currentMonth);
+    assert.ok(bucket);
+    assert.equal(bucket!.value, 100);
   });
 
-  it('does not include Pending or Failed transactions', () => {
+  it('Pending transactions are excluded', () => {
+    const list = [tx({ amount: 100, timestamp: utcNow.toISOString(), status: 'Pending' })];
+    const result = aggregateRevenueByPeriod(list, 'monthly');
+    // All values must be 0 since no Completed transaction exists.
+    assert.ok(result.every((r) => r.value === 0));
+  });
+
+  it('Failed transactions are excluded', () => {
+    const list = [tx({ amount: 100, timestamp: utcNow.toISOString(), status: 'Failed' })];
+    const result = aggregateRevenueByPeriod(list, 'monthly');
+    assert.ok(result.every((r) => r.value === 0));
+  });
+
+  // ---- Summation ----
+
+  it('multiple transactions in the same period are summed', () => {
+    const currentMonth = monthlyLabels(12)[11];
     const list = [
-      tx({ amount: 999, timestamp: '2026-08-21T00:00:00Z', status: 'Pending' }),
-      tx({ amount: 999, timestamp: '2026-08-21T00:00:00Z', status: 'Failed' }),
-      tx({ amount: 50, timestamp: '2026-08-21T00:00:00Z', status: 'Completed' }),
+      tx({ amount: 100, timestamp: utcNow.toISOString(), status: 'Completed' }),
+      tx({ amount: 200, timestamp: utcNow.toISOString(), status: 'Completed' }),
     ];
+    const result = aggregateRevenueByPeriod(list, 'monthly');
+    const bucket = result.find((r) => r.label === currentMonth);
+    assert.equal(bucket!.value, 300);
+  });
+
+  // ---- Chronological order ----
+
+  it('results are sorted chronologically (oldest first)', () => {
+    const list = [tx({ amount: 50, timestamp: utcNow.toISOString(), status: 'Completed' })];
+    const result = aggregateRevenueByPeriod(list, 'monthly');
+    const labels = result.map((r) => r.label);
+    // Verify strict chronological order by comparing string-sorted vs result order.
+    const sorted = [...labels].sort();
+    assert.deepEqual(labels, sorted);
+  });
+
+  // ---- Empty periods ----
+
+  it('empty periods are represented with value 0', () => {
+    // Place a completed transaction 3 months ago — the other 11 months should be 0.
+    const threeMonthsAgo = new Date(Date.UTC(utcNow.getUTCFullYear(), utcNow.getUTCMonth() - 3, 15));
+    const list = [tx({ amount: 500, timestamp: threeMonthsAgo.toISOString(), status: 'Completed' })];
+    const result = aggregateRevenueByPeriod(list, 'monthly');
+    assert.equal(result.length, 12);
+    // The month 3 months ago should have the value; all others 0.
+    const targetLabel = `${threeMonthsAgo.getUTCFullYear()}-${pad2(threeMonthsAgo.getUTCMonth() + 1)}`;
+    for (const r of result) {
+      if (r.label === targetLabel) {
+        assert.equal(r.value, 500);
+      } else {
+        assert.equal(r.value, 0, `expected 0 for ${r.label}`);
+      }
+    }
+  });
+
+  // ---- Real-time update behavior ----
+
+  it('a new transaction changes the correct bucket', () => {
+    // Start with one transaction today, add another in the same period.
+    const todayLabel = `${utcNow.getUTCFullYear()}-${pad2(utcNow.getUTCMonth() + 1)}-${pad2(utcNow.getUTCDate())}`;
+    const list1 = [tx({ amount: 100, timestamp: utcNow.toISOString(), status: 'Completed' })];
+    const result1 = aggregateRevenueByPeriod(list1, 'daily');
+    const bucket1 = result1.find((r) => r.label === todayLabel);
+    assert.equal(bucket1!.value, 100);
+
+    // Add another transaction same day.
+    const list2 = [
+      tx({ amount: 100, timestamp: utcNow.toISOString(), status: 'Completed' }),
+      tx({ amount: 50, timestamp: utcNow.toISOString(), status: 'Completed' }),
+    ];
+    const result2 = aggregateRevenueByPeriod(list2, 'daily');
+    const bucket2 = result2.find((r) => r.label === todayLabel);
+    assert.equal(bucket2!.value, 150);
+  });
+
+  // ---- No mutation ----
+
+  it('does not mutate the original transaction array', () => {
+    const list = [tx({ amount: 100, timestamp: utcNow.toISOString(), status: 'Completed' })];
+    const original = [...list];
+    aggregateRevenueByPeriod(list, 'monthly');
+    assert.deepEqual(list, original);
+  });
+
+  // ---- Edge cases ----
+
+  it('handles zero transactions gracefully', () => {
+    assert.deepEqual(aggregateRevenueByPeriod([], 'daily'), []);
+    assert.deepEqual(aggregateRevenueByPeriod([], 'weekly'), []);
+    assert.deepEqual(aggregateRevenueByPeriod([], 'monthly'), []);
+    assert.deepEqual(aggregateRevenueByPeriod([], 'yearly'), []);
+  });
+
+  it('handles only failed transactions', () => {
+    const list = [tx({ amount: 100, timestamp: utcNow.toISOString(), status: 'Failed' })];
+    assert.deepEqual(aggregateRevenueByPeriod(list, 'daily'), []);
+  });
+
+  it('handles only pending transactions', () => {
+    const list = [tx({ amount: 100, timestamp: utcNow.toISOString(), status: 'Pending' })];
+    assert.deepEqual(aggregateRevenueByPeriod(list, 'daily'), []);
+  });
+
+  it('handles one day of data correctly (today, with surrounding days at 0)', () => {
+    const list = [tx({ amount: 100, timestamp: utcNow.toISOString(), status: 'Completed' })];
     const result = aggregateRevenueByPeriod(list, 'daily');
-    assert.equal(result.length, 1);
-    assert.equal(result[0].value, 50);
+    assert.equal(result.length, 7);
+    const total = result.reduce((s, r) => s + r.value, 0);
+    assert.equal(total, 100); // only one day has non-zero
+    // Today's bucket must be the one with the value.
+    const todayLabel = `${utcNow.getUTCFullYear()}-${pad2(utcNow.getUTCMonth() + 1)}-${pad2(utcNow.getUTCDate())}`;
+    const todayBucket = result.find((r) => r.label === todayLabel);
+    assert.equal(todayBucket!.value, 100);
   });
 });
 

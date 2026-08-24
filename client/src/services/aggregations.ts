@@ -102,8 +102,17 @@ type Period = 'daily' | 'weekly' | 'monthly' | 'yearly';
 /**
  * Aggregate completed-transaction revenue by a given time period.
  * Only Completed transactions are included; Pending and Failed are excluded.
- * Returns an array of { label, value } sorted chronologically.
- * Empty if no completed transactions exist.
+ *
+ * Produces a CONTINUOUS time series: every time bucket that should exist in the
+ * selected range is present in the output, even if its value is zero.
+ *
+ * - Daily   → last 7 calendar days from Sunday through today
+ * - Weekly  → last 12 consecutive ISO weeks (current week + 11 preceding)
+ * - Monthly → last 12 calendar months (current month + 11 preceding)
+ * - Yearly  → last 5 calendar years  (current year + 4 preceding)
+ *
+ * Returns an array of { label, value } sorted chronologically (oldest first).
+ * Returns [] when no completed transactions exist.
  */
 export function aggregateRevenueByPeriod(
   transactions: readonly Transaction[],
@@ -113,30 +122,117 @@ export function aggregateRevenueByPeriod(
   const completed = transactions.filter((tx) => normalizeStatus(tx.status) === 'completed');
   if (completed.length === 0) return [];
 
-  // 2. Bucket by period, tracking per-currency revenue.
-  //    Since we don't convert currencies, we emit ONE value per bucket.
-  //    If a bucket has mixed currencies, we use the dominant currency.
-  //    For single-currency datasets (the common case) this just sums.
-  const buckets = new Map<string, { value: number; currency: string }>();
-
+  // 2. Build a Map of bucket-label → total value from completed transactions.
+  const buckets = new Map<string, number>();
   for (const tx of completed) {
     const label = bucketLabel(tx.timestamp, period);
-    const existing = buckets.get(label);
-    if (existing) {
-      // If the same currency, just add; if different, we still add the raw
-      // amount but flag it — the consumer (chart) will show per-currency anyway.
-      existing.value += tx.amount;
-      // Keep the most recent currency as the label hint (display only).
-      existing.currency = tx.currency;
-    } else {
-      buckets.set(label, { value: tx.amount, currency: tx.currency });
-    }
+    buckets.set(label, (buckets.get(label) ?? 0) + tx.amount);
   }
 
-  // 3. Sort by date chronologically.
-  return [...buckets.entries()]
-    .map(([label, { value }]) => ({ label, value }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  // 3. Generate the full set of expected bucket labels for the chosen period,
+  //    filling in any that have no data with 0.
+  const allLabels = generatePeriodLabels(period);
+
+  // 4. Map to PeriodBucket[], keeping the chronological order allLabels provides.
+  return allLabels.map((label) => ({
+    label,
+    value: buckets.get(label) ?? 0,
+  }));
+}
+
+/**
+ * Generate the full set of expected period labels in chronological order.
+ *
+ * The range is anchored to the *current UTC date* — this ensures that real-time
+ * additions near midnight are assigned to the correct calendar bucket according
+ * to the project's UTC-based convention (see bucketLabel which uses getUTC*).
+ */
+function generatePeriodLabels(period: Period): string[] {
+  const now = new Date(); // local time — but we use UTC for bucket keys, so anchor to UTC-now.
+  const utcNow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+  switch (period) {
+    case 'daily': {
+      // Current calendar week: Sunday through Saturday (always 7 days).
+      // Days after today get value 0 (they exist as placeholders).
+      const labels: string[] = [];
+      const dayOfWeek = utcNow.getUTCDay(); // 0=Sun … 6=Sat
+      const sunday = new Date(utcNow);
+      sunday.setUTCDate(sunday.getUTCDate() - dayOfWeek); // roll back to Sunday
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(sunday);
+        d.setUTCDate(d.getUTCDate() + i);
+        labels.push(formatDaily(d));
+      }
+      return labels;
+    }
+    case 'weekly': {
+      // Last 12 ISO weeks: current week + 11 preceding weeks.
+      const labels: string[] = [];
+      const currentWeekStart = toWeekStart(utcNow);
+      for (let i = 11; i >= 0; i--) {
+        const w = new Date(currentWeekStart);
+        w.setUTCDate(w.getUTCDate() - i * 7);
+        labels.push(formatWeekly(w));
+      }
+      return labels;
+    }
+    case 'monthly': {
+      // Last 12 calendar months: current month + 11 preceding months.
+      const labels: string[] = [];
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(Date.UTC(utcNow.getUTCFullYear(), utcNow.getUTCMonth() - i, 1));
+        labels.push(formatMonthly(d));
+      }
+      return labels;
+    }
+    case 'yearly': {
+      // Last 5 calendar years: current year + 4 preceding years.
+      const labels: string[] = [];
+      for (let i = 4; i >= 0; i--) {
+        const y = utcNow.getUTCFullYear() - i;
+        labels.push(String(y));
+      }
+      return labels;
+    }
+  }
+}
+
+/** Format a Date as a daily bucket key: "YYYY-MM-DD" (UTC). */
+function formatDaily(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Format a Date as a monthly bucket key: "YYYY-MM" (UTC). */
+function formatMonthly(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+/** Format a Date as a weekly bucket key: "YYYY-Www" (ISO 8601, UTC). */
+function formatWeekly(d: Date): string {
+  // ISO 8601: Thursday determines which year the week belongs to.
+  const d2 = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  d2.setUTCDate(d2.getUTCDate() + 4 - (d2.getUTCDay() || 7));
+  const year = d2.getUTCFullYear();
+  const firstThu = new Date(Date.UTC(year, 0, 4));
+  const week = 1 + Math.ceil(((d2.getTime() - firstThu.getTime()) / 86400000) / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+/**
+ * Get the Monday (start) of the ISO week that contains the given date (UTC).
+ */
+function toWeekStart(d: Date): Date {
+  const dayOfWeek = d.getUTCDay(); // 0=Sun .. 6=Sat
+  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday = 1, Sunday → go back 6 days
+  const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  monday.setUTCDate(monday.getUTCDate() + diff);
+  return monday;
 }
 
 /**

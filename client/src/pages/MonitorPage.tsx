@@ -5,6 +5,7 @@ import { TransactionDashboard } from '../components/TransactionDashboard';
 import { TransactionTable } from '../components/TransactionTable';
 import { ViewToggle, type ViewMode } from '../components/ViewToggle';
 import { useLiveTransactions } from '../hooks/useLiveTransactions';
+import { useTransactionToast } from '../components/TransactionToast';
 
 /** Entrance stagger: only the first few cards cascade, so a burst of >STAGGER_GAP
  *  cards still animates in smoothly without stalling the whole 200-item feed. */
@@ -17,13 +18,15 @@ const STAGGER_STEP = 40;
  * resulting list. No direct fetch, no try/catch, no local connection handling.
  */
 export function MonitorPage() {
+  const { addToast, ToastContainer } = useTransactionToast();
   const { transactions, totalCount, connectionState, filter, toggleFailedOnly } =
-    useLiveTransactions();
+    useLiveTransactions(addToast);
   const errorsOnly = filter === 'failed';
   const [view, setView] = useState<ViewMode>('table');
 
   return (
     <section className="page">
+      <ToastContainer />
       <div className="page__header">
         <div>
           <h2>Live dashboard</h2>

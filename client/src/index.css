@@ -151,6 +151,67 @@ body {
   color: var(--bad);
 }
 
+/* ---- Transaction Toast ---- */
+.toast-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 1rem;
+  gap: 0.5rem;
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  max-width: 380px;
+  width: 100%;
+}
+.toast__icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  color: var(--ok);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.toast__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.toast__title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text);
+}
+.toast__detail {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toast__meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
 /* ---- Connection pill ---- */
 .pill {
   padding: 0.25rem 0.75rem;
