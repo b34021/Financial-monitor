@@ -159,12 +159,12 @@ docker build -f server/src/RTM.Api/Dockerfile -t rtmonitor-api .
 
 ## Kubernetes
 
-Manifests in [`k8s/`](k8s/): [`deployment.yaml`](k8s/deployment.yaml) (3 replicas + Service — the Service is included in the same file), [`redis.yaml`](k8s/redis.yaml) (in-cluster Redis with healthcheck). Run:
+Manifests in [`k8s/`](k8s/): [`deployment.yaml`](k8s/deployment.yaml) (5 replicas + Service — the Service is included in the same file), [`redis.yaml`](k8s/redis.yaml) (in-cluster Redis with healthcheck). Run:
 
 ```
 kubectl apply -f k8s/redis.yaml
 kubectl apply -f k8s/deployment.yaml
-kubectl get pods -w        # 3/3 Ready when probes pass
+kubectl get pods -w        # 5/5 Ready when probes pass
 kubectl port-forward svc/rtmonitor-api 8080:8080
 ```
 
