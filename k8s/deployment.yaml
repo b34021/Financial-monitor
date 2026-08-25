@@ -1,5 +1,5 @@
 # ==============================================================================
-# rtmonitor-api — Deployment (3 replicas) + Service
+# rtmonitor-api — Deployment (5 replicas) + Service
 #
 # Exposes the RTM backend on 8080. /health (mapped in Program.cs) drives the
 # liveness + readiness probes. Redis is expected as the "redis" Service in the
@@ -13,7 +13,7 @@ metadata:
     app.kubernetes.io/name: rtmonitor-api
     app.kubernetes.io/part-of: rtmonitor
 spec:
-  replicas: 3
+  replicas: 5
   selector:
     matchLabels:
       app.kubernetes.io/name: rtmonitor-api
@@ -36,7 +36,7 @@ spec:
               value: "redis:6379"
             - name: Redis__Enabled
               value: "true"
-            # Enable the SignalR Redis backplane so all 3 replicas share the
+            # Enable the SignalR Redis backplane so all 5 replicas share the
             # same pub/sub channel — a transaction received by any pod is
             # broadcast to clients connected to every pod.
             - name: SignalR__UseRedisBackplane
